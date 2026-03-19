@@ -27,15 +27,17 @@
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
 
-    <script type="text/babel">
+    <!-- Se utiliza data-type="module" para que Babel permita el uso de imports ESM -->
+    <script type="text/babel" data-type="module">
         const { useState, useEffect, useMemo } = React;
 
-        // Importación dinámica de Firebase desde CDN para compatibilidad total en un solo archivo
+        // Importación de Firebase desde CDN (ESM)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, doc, onSnapshot, updateDoc, increment, addDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // --- CONFIGURACIÓN ---
+        // Se asume que estas variables globales son inyectadas por el entorno
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -45,7 +47,11 @@
 
         // Iconos auxiliares (simulando Lucide en React)
         const Icon = ({ name, size = 20, className = "" }) => {
-            useEffect(() => { lucide.createIcons(); }, [name]);
+            useEffect(() => { 
+                if (window.lucide) {
+                    window.lucide.createIcons(); 
+                }
+            }, [name]);
             return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
         };
 
@@ -73,7 +79,9 @@
                     }
                 };
                 initAuth();
-                const unsubscribe = onAuthStateChanged(auth, setUser);
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                });
                 return () => unsubscribe();
             }, []);
 
@@ -88,7 +96,9 @@
                         const shuffled = [...ideasList].sort(() => 0.5 - Math.random());
                         setCurrentPair([shuffled[0], shuffled[1]]);
                     }
-                }, (error) => console.error(error));
+                }, (error) => {
+                    console.error("Firestore Error:", error);
+                });
                 return () => unsubscribe();
             }, [user]);
 
@@ -104,9 +114,14 @@
                     }
                     setMessage({ type: 'success', text: 'Voto procesado en la red' });
                     setTimeout(() => setMessage(null), 1500);
-                    const shuffled = [...ideas].sort(() => 0.5 - Math.random());
-                    setCurrentPair([shuffled[0], shuffled[1]]);
-                } catch (err) { console.error(err); }
+                    
+                    if (ideas.length >= 2) {
+                        const shuffled = [...ideas].sort(() => 0.5 - Math.random());
+                        setCurrentPair([shuffled[0], shuffled[1]]);
+                    }
+                } catch (err) { 
+                    console.error("Vote Error:", err); 
+                }
             };
 
             const handleAddIdea = async (e) => {
@@ -125,6 +140,7 @@
                     });
                     const result = await response.json();
                     const aiText = result.candidates?.[0]?.content?.parts?.[0]?.text || "Descripción técnica generada.";
+                    
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ideas'), {
                         title: newIdeaText.toUpperCase(),
                         description: aiText,
@@ -135,8 +151,12 @@
                     setNewIdeaText('');
                     setIsAddingIdea(false);
                     setMessage({ type: 'success', text: 'Propuesta publicada' });
-                } catch (err) { setMessage({ type: 'error', text: 'Error de conexión' }); }
-                finally { setIsGenerating(false); setTimeout(() => setMessage(null), 3000); }
+                } catch (err) { 
+                    setMessage({ type: 'error', text: 'Error de conexión o API' }); 
+                } finally { 
+                    setIsGenerating(false); 
+                    setTimeout(() => setMessage(null), 3000); 
+                }
             };
 
             const sortedRanking = useMemo(() => {
