@@ -18,7 +18,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'democraciadirectacl';
-        const apiKey = ""; // API Key de Gemini (inyectada en runtime)
+        const apiKey = "GEMINI_API_KEY"; // API Key de Gemini (inyectada en runtime)
 
         // Estado de la Aplicación
         let user = null;
