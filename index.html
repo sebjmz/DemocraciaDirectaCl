@@ -1,116 +1,329 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Democracia Directa Chile</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
-        .gradient-btn { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); }
-    </style>
-</head>
-<body class="text-slate-900">
-    <div id="app" class="min-h-screen flex flex-col">
-        <!-- Navegación -->
-        <nav class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm">
-            <div class="flex items-center gap-2 cursor-pointer" onclick="location.reload()">
-                <div class="bg-indigo-600 p-2 rounded-lg text-white">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
-                </div>
-                <span class="font-extrabold text-xl tracking-tighter uppercase">Democracia<span class="text-indigo-600">Directa</span></span>
-            </div>
-            <button onclick="showRanking()" class="text-[10px] font-black uppercase tracking-widest text-slate-400">Ver Ranking</button>
-        </nav>
+import React, { useState, useEffect, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  onSnapshot, 
+  updateDoc, 
+  increment
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  Scale,
+  Loader2,
+  ArrowRight,
+  Shield,
+  PlusCircle,
+  Sparkles,
+  ChevronDown,
+  ChevronUp
+} from 'lucide-react';
 
-        <!-- Main -->
-        <main class="flex-grow container mx-auto max-w-4xl p-6 flex flex-col items-center justify-center text-center">
-            
-            <div id="view-home" class="space-y-8">
-                <h1 class="text-5xl md:text-7xl font-black tracking-tighter leading-none">Chile decide <br><span class="text-indigo-600">sin filtros.</span></h1>
-                <p class="text-slate-500 text-lg max-w-md mx-auto">Vota por las prioridades nacionales de forma directa.</p>
-                <button onclick="showVote()" class="gradient-btn text-white px-10 py-5 rounded-2xl font-black text-xl shadow-xl hover:scale-105 transition-all">
-                    COMENZAR A VOTAR
-                </button>
-            </div>
+// ==========================================
+// CONFIGURACIÓN FIREBASE
+// ==========================================
+const firebaseConfig = {
+  apiKey: "AIzaSyBWxTFJGOFesMgIyp5C65qQEnFr5_dCXcU",
+  authDomain: "democraciadirectacl-b75ad.firebaseapp.com",
+  projectId: "democraciadirectacl-b75ad",
+  storageBucket: "democraciadirectacl-b75ad.firebasestorage.app",
+  messagingSenderId: "837131448793",
+  appId: "1:837131448793:web:2b5d2aef6e925bac8d29c8",
+  measurementId: "G-PW1DGYYWKK"
+};
 
-            <div id="view-vote" class="hidden w-full space-y-8">
-                <h2 class="text-xl font-bold text-slate-400 uppercase tracking-widest">¿Qué es más urgente?</h2>
-                <div id="pair-container" class="grid md:grid-cols-2 gap-4"></div>
-            </div>
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const apiKey = ""; // La API Key se inyecta automáticamente en el entorno
 
-            <div id="view-ranking" class="hidden w-full space-y-6 text-left">
-                <h2 class="text-3xl font-black mb-6">Ranking Actual</h2>
-                <div id="ranking-list" class="space-y-3"></div>
-                <button onclick="showVote()" class="w-full py-4 text-indigo-600 font-bold border-2 border-indigo-50 rounded-xl mt-4">SEGUIR VOTANDO</button>
-            </div>
+const APP_ID = 'democracia-v1-prod';
 
-        </main>
+const HERO_PHRASES = [
+  "Chile decide sin intermediarios.",
+  "Tu voz es el único filtro.",
+  "Democracia real, en tus manos.",
+  "Construyendo el futuro que soñamos.",
+  "Poder ciudadano sin fronteras.",
+  "La opinión de todos, la fuerza de Chile."
+];
 
-        <footer class="py-8 text-center text-[10px] font-bold text-slate-300 tracking-[0.5em]">
-            DEMOCRACIA DIRECTA v1.0
-        </footer>
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [proposals, setProposals] = useState([]);
+  const [currentPair, setCurrentPair] = useState([]);
+  const [view, setView] = useState('home'); 
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [newIdea, setNewIdea] = useState("");
+  const [phrase, setPhrase] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+
+  // Elegir frase al azar al cargar
+  useEffect(() => {
+    setPhrase(HERO_PHRASES[Math.floor(Math.random() * HERO_PHRASES.length)]);
+  }, []);
+
+  // Auth y Firebase
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInAnonymously(auth); 
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) { console.error(err); }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const proposalsCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'proposals');
+    const unsubscribe = onSnapshot(proposalsCol, (snapshot) => {
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setProposals(docs);
+      setLoading(false);
+    }, (error) => console.error(error));
+    return () => unsubscribe();
+  }, [user]);
+
+  // Lógica de Votación
+  useEffect(() => {
+    if (proposals.length >= 2 && currentPair.length === 0) {
+      const shuffled = [...proposals].sort(() => 0.5 - Math.random());
+      setCurrentPair(shuffled.slice(0, 2));
+    }
+  }, [proposals, currentPair]);
+
+  const handleVote = async (winnerId) => {
+    if (!user) return;
+    const winnerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'proposals', winnerId);
+    const loserId = currentPair.find(p => p.id !== winnerId)?.id;
+    const loserRef = loserId ? doc(db, 'artifacts', APP_ID, 'public', 'data', 'proposals', loserId) : null;
+    
+    try {
+      await updateDoc(winnerRef, { votes: increment(1), showCount: increment(1) });
+      if (loserRef) await updateDoc(loserRef, { showCount: increment(1) });
+      setCurrentPair([]); 
+    } catch (err) { console.error(err); }
+  };
+
+  // Lógica de IA para nuevas propuestas
+  const submitIdea = async () => {
+    if (!newIdea.trim() || !user) return;
+    setSubmitting(true);
+
+    const systemPrompt = "Eres un experto en políticas públicas chilenas. Recibirás una idea ciudadana escrita de forma simple o desordenada. Tu tarea es transformarla en una propuesta profesional. Responde ÚNICAMENTE en formato JSON con dos campos: 'title' (un título corto y potente de máximo 5 palabras) y 'desc' (una descripción clara y técnica de máximo 25 palabras).";
+    const userQuery = `Propuesta: ${newIdea}`;
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: userQuery }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      });
+
+      const result = await response.json();
+      const cleanData = JSON.parse(result.candidates[0].content.parts[0].text);
+      
+      const proposalsCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'proposals');
+      const newDocId = crypto.randomUUID();
+      
+      await setDoc(doc(proposalsCol, newDocId), {
+        title: cleanData.title,
+        desc: cleanData.desc,
+        votes: 0,
+        showCount: 0,
+        createdAt: Date.now()
+      });
+
+      setNewIdea("");
+      setView('ranking');
+    } catch (err) {
+      console.error("Error IA:", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const sortedRanking = useMemo(() => {
+    return [...proposals].sort((a, b) => (b.votes / (b.showCount || 1)) - (a.votes / (a.showCount || 1)));
+  }, [proposals]);
+
+  if (loading) return (
+    <div className="min-h-screen bg-white flex items-center justify-center">
+      <Loader2 className="animate-spin text-indigo-600 w-12 h-12" />
     </div>
+  );
 
-    <script>
-        const proposals = [
-            { id: 1, title: "Seguridad Ciudadana", desc: "Control fronterizo y vigilancia inteligente.", votes: 0, shows: 0 },
-            { id: 2, title: "Salud Pública", desc: "Reducción de listas de espera.", votes: 0, shows: 0 },
-            { id: 3, title: "Educación de Calidad", desc: "Apoyo directo a estudiantes.", votes: 0, shows: 0 },
-            { id: 4, title: "Pensiones Dignas", desc: "Propiedad de los ahorros.", votes: 0, shows: 0 }
-        ];
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-indigo-100">
+      {/* Navbar */}
+      <nav className="fixed top-0 w-full z-50 bg-white/70 backdrop-blur-xl border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('home')}>
+            <div className="bg-indigo-600 p-1.5 rounded-lg text-white shadow-lg shadow-indigo-200">
+              <Scale size={18} />
+            </div>
+            <span className="text-lg font-black tracking-tighter">DEMOCRACIA<span className="text-indigo-600">DIRECTA</span></span>
+          </div>
+          <div className="flex gap-6 items-center">
+            <button onClick={() => setView('vote')} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 transition-colors">Votar</button>
+            <button onClick={() => setView('ranking')} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 transition-colors">Ranking</button>
+            <button onClick={() => setView('propose')} className="bg-indigo-600 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100 hover:scale-105 transition-all">Proponer</button>
+          </div>
+        </div>
+      </nav>
 
-        function showVote() {
-            document.getElementById('view-home').classList.add('hidden');
-            document.getElementById('view-ranking').classList.add('hidden');
-            document.getElementById('view-vote').classList.remove('hidden');
-            renderPair();
-        }
+      <main className="pt-24 pb-20 px-6 max-w-4xl mx-auto">
+        
+        {/* VISTA HOME */}
+        {view === 'home' && (
+          <div className="text-center py-20 animate-in fade-in duration-700 space-y-10">
+            <div className="inline-flex items-center gap-2 bg-white border border-slate-200 px-4 py-1.5 rounded-full shadow-sm">
+              <Sparkles className="text-indigo-600 w-4 h-4" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">Impulsado por IA Ciudadana</span>
+            </div>
+            <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.85] text-slate-900">
+              {phrase.split(' ')[0]} <br/>
+              <span className="text-indigo-600">{phrase.split(' ').slice(1).join(' ')}</span>
+            </h1>
+            <p className="text-xl text-slate-500 max-w-xl mx-auto font-medium">
+              Toma el control. Vota por lo urgente o propone una solución para el país. Sin partidos, sin filtros, solo tú.
+            </p>
+            <div className="flex flex-col md:flex-row justify-center gap-4 pt-4">
+              <button onClick={() => setView('vote')} className="bg-slate-900 text-white px-10 py-5 rounded-2xl font-black text-xl hover:bg-indigo-600 transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-3">
+                EMPEZAR A VOTAR <ArrowRight />
+              </button>
+              <button onClick={() => setView('propose')} className="bg-white border-2 border-slate-200 text-slate-900 px-10 py-5 rounded-2xl font-black text-xl hover:border-indigo-600 transition-all flex items-center justify-center gap-3">
+                TENGO UNA IDEA <PlusCircle />
+              </button>
+            </div>
+          </div>
+        )}
 
-        function showRanking() {
-            document.getElementById('view-home').classList.add('hidden');
-            document.getElementById('view-vote').classList.add('hidden');
-            document.getElementById('view-ranking').classList.remove('hidden');
-            renderRanking();
-        }
-
-        function renderPair() {
-            const shuffled = [...proposals].sort(() => 0.5 - Math.random()).slice(0, 2);
-            document.getElementById('pair-container').innerHTML = shuffled.map(p => `
-                <button onclick="vote(${p.id}, [${shuffled.map(x=>x.id)}])" class="bg-white p-8 rounded-3xl border-2 border-slate-100 hover:border-indigo-600 shadow-sm text-left transition-all">
-                    <div class="text-2xl font-black mb-1">${p.title}</div>
-                    <p class="text-slate-500 text-sm">${p.desc}</p>
-                </button>
-            `).join('');
-        }
-
-        function vote(winnerId, pairIds) {
-            proposals.forEach(p => {
-                if (p.id === winnerId) p.votes++;
-                if (pairIds.includes(p.id)) p.shows++;
-            });
-            renderPair();
-            if (proposals.reduce((a,b) => a+b.votes, 0) % 4 === 0) showRanking();
-        }
-
-        function renderRanking() {
-            const sorted = [...proposals].sort((a,b) => (b.votes/(b.shows||1)) - (a.votes/(a.shows||1)));
-            document.getElementById('ranking-list').innerHTML = sorted.map((p, i) => {
-                const perc = p.shows > 0 ? ((p.votes/p.shows)*100).toFixed(1) : 0;
-                return `
-                    <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-                        <div class="flex justify-between items-center mb-2 font-bold text-sm">
-                            <span>#${i+1} ${p.title}</span>
-                            <span class="text-indigo-600">${perc}%</span>
-                        </div>
-                        <div class="w-full h-2 bg-slate-50 rounded-full overflow-hidden">
-                            <div class="h-full gradient-btn" style="width: ${perc}%"></div>
-                        </div>
+        {/* VISTA VOTAR */}
+        {view === 'vote' && (
+          <div className="animate-in slide-in-from-bottom-4 duration-500 space-y-10">
+            <h2 className="text-3xl font-black text-center tracking-tighter italic">¿Qué prioridad es más urgente hoy?</h2>
+            <div className="grid md:grid-cols-2 gap-6">
+              {currentPair.map((p, idx) => (
+                <button 
+                  key={p.id} 
+                  onClick={() => handleVote(p.id)} 
+                  className="group relative p-12 bg-white border-2 border-white rounded-[3rem] text-left hover:border-indigo-600 shadow-sm hover:shadow-2xl transition-all flex flex-col justify-between min-h-[300px]"
+                >
+                  <div>
+                    <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-indigo-50 transition-colors">
+                      <Shield className="text-slate-300 group-hover:text-indigo-600 transition-colors" />
                     </div>
-                `;
-            }).join('');
-        }
-    </script>
-</body>
-</html>
+                    <div className="text-3xl font-black tracking-tighter mb-4 group-hover:text-indigo-600 transition-colors leading-tight">{p.title}</div>
+                    <p className="text-slate-400 font-medium leading-relaxed">{p.desc}</p>
+                  </div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-200 mt-6 group-hover:text-indigo-200">Opción 0{idx+1}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-center text-slate-300 text-xs font-bold uppercase tracking-widest">Haz clic sobre tu preferencia</p>
+          </div>
+        )}
+
+        {/* VISTA PROPONER */}
+        {view === 'propose' && (
+          <div className="max-w-2xl mx-auto animate-in fade-in duration-500 space-y-8">
+            <div className="text-center space-y-4">
+              <h2 className="text-5xl font-black tracking-tighter">Propón una <span className="text-indigo-600 italic">solución.</span></h2>
+              <p className="text-slate-500 font-medium">Escribe tu idea de forma simple. Nuestra IA se encargará de darle formato profesional para que otros puedan votar por ella.</p>
+            </div>
+            <div className="bg-white p-8 rounded-[3rem] shadow-xl shadow-slate-200 border border-slate-100">
+              <textarea 
+                value={newIdea}
+                onChange={(e) => setNewIdea(e.target.value)}
+                placeholder="Ej: 'Me gustaría que los consultorios atiendan más rápido usando una app para las horas...'"
+                className="w-full h-40 bg-slate-50 rounded-2xl p-6 text-lg font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 border-none resize-none"
+              />
+              <button 
+                disabled={submitting || !newIdea.trim()}
+                onClick={submitIdea}
+                className="w-full mt-6 bg-indigo-600 text-white py-5 rounded-2xl font-black text-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-100"
+              >
+                {submitting ? <Loader2 className="animate-spin" /> : <><Sparkles size={20} /> ENVIAR CON IA</>}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* VISTA RANKING */}
+        {view === 'ranking' && (
+          <div className="space-y-12 animate-in fade-in duration-500">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-200 pb-8">
+              <h2 className="text-5xl font-black tracking-tighter">El pulso de <span className="text-indigo-600">Chile.</span></h2>
+              <div className="flex gap-2">
+                <span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">Ordenado por % de apoyo</span>
+              </div>
+            </div>
+            <div className="grid gap-4">
+              {sortedRanking.map((p, i) => {
+                const score = ((p.votes / (p.showCount || 1)) * 100).toFixed(1);
+                const isExpanded = expandedId === p.id;
+                return (
+                  <div key={p.id} className="bg-white border border-slate-100 p-8 rounded-[2rem] hover:shadow-xl transition-all group overflow-hidden">
+                    <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : p.id)}>
+                      <div className="flex items-center gap-4">
+                        <span className="w-8 h-8 bg-slate-900 text-white rounded-lg flex items-center justify-center font-black text-xs">#{i+1}</span>
+                        <h3 className="text-2xl font-black group-hover:text-indigo-600 transition-colors uppercase tracking-tighter">{p.title}</h3>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <span className="font-black text-2xl text-indigo-600">{score}%</span>
+                        {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                      </div>
+                    </div>
+                    
+                    {/* El detalle de la idea que pediste */}
+                    <div className={`transition-all duration-500 overflow-hidden ${isExpanded ? 'max-h-96 mt-6' : 'max-h-0'}`}>
+                      <div className="p-6 bg-slate-50 rounded-2xl border-l-4 border-indigo-600">
+                        <p className="text-slate-600 font-medium leading-relaxed">{p.desc}</p>
+                        <div className="mt-4 flex gap-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                          <span>Votos: {p.votes}</span>
+                          <span>Apariciones: {p.showCount}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 w-full h-2.5 bg-slate-50 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${score}%` }}></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-center">
+              <button onClick={() => setView('vote')} className="text-indigo-600 font-black uppercase text-xs tracking-[0.3em] hover:underline underline-offset-8">Volver a la cabina de votación</button>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <footer className="border-t border-slate-200 py-12 text-center bg-white">
+        <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.5em]">Plataforma Democracia Directa · Santiago, Chile</p>
+      </footer>
+    </div>
+  );
+}
