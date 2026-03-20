@@ -10,13 +10,20 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, doc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'democraciadirectacl';
-        const apiKey = ""; // Dejar vacío: El entorno lo gestiona.
+        const firebaseConfig = {
+            apiKey: "AIzaSyBWxTFJGOFesMgIyp5C65qQEnFr5_dCxcU",
+            authDomain: "democraciadirectacl-b75ad.firebaseapp.com",
+            projectId: "democraciadirectacl-b75ad",
+            storageBucket: "democraciadirectacl-b75ad.firebasestorage.app",
+            messagingSenderId: "837131448793",
+            appId: "1:837131448793:web:2b5d2aef6e925bac8d29c8"
+        };
 
+        const appId = 'democraciadirectacl';
+        const apiKey = ""; 
         let db, auth, user;
         let todasLasPropuestas = [];
         let vistaActual = 'duelo'; 
@@ -26,11 +33,11 @@
 
         const mensajesAliento = [
             "Tu voz es la piedra angular del nuevo Chile.",
-            "Construyendo una nación más justa, segundo a segundo.",
+            "Construyendo una nación más justa...",
             "La soberanía reside en tu capacidad de proponer.",
-            "Por un futuro donde el pueblo siempre sea escuchado.",
-            "Tu idea está siendo procesada por el bien de la patria.",
-            "Unidos, estamos diseñando el Chile de la próxima década."
+            "Por un futuro donde el pueblo sea escuchado.",
+            "Tu idea está siendo integrada a la comunidad.",
+            "Gracias por comprometerte con el destino del país."
         ];
 
         async function conectarFirebase() {
@@ -38,13 +45,7 @@
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
-                
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
+                await signInAnonymously(auth);
                 onAuthStateChanged(auth, (u) => {
                     if (u) {
                         user = u;
@@ -52,12 +53,12 @@
                     }
                 });
             } catch (e) { 
-                console.error("Error de conexión:", e);
+                console.error("Error conectando:", e);
+                actualizarComponentes();
             }
         }
 
         function escucharDatos() {
-            if (!user) return;
             const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'propuestas');
             onSnapshot(colRef, (snapshot) => {
                 let total = 0;
@@ -72,7 +73,8 @@
                 totalVotosGlobal = total;
                 actualizarComponentes();
             }, (error) => {
-                console.error("Error Firestore:", error);
+                console.error("Error en tiempo real:", error);
+                actualizarComponentes();
             });
         }
 
@@ -103,54 +105,35 @@
             }
             
             if (vista === 'ranking') renderizarRanking();
+            if (vista === 'duelo' && dueloActualIds.length === 0) presentarNuevoDuelo();
+            window.scrollTo(0, 0);
         };
 
-        // Función de llamada a IA con exponencial backoff y manejo de 403
         async function procesarConIA(texto) {
-            const model = "gemini-2.5-flash-preview-09-2025";
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            const systemPrompt = "Eres un sintetizador de voluntad popular. Resume la idea del usuario en un objeto JSON: {\"titulo\":\"MAX 3 PALABRAS\", \"descripcion\":\"Una frase de impacto corta\"}. Si el contenido es ofensivo o spam, devuelve {\"error\":true}. No incluyas explicaciones, solo el JSON.";
-            
-            let retries = 5;
-            let delay = 1000;
+            try {
+                const systemPrompt = `Eres un sintetizador de voluntad popular para Chile.
+                1. Resume la idea de forma CLARA y CORTA.
+                2. Si hay insultos o spam, devuelve: {"error": true}.
+                3. Formato JSON estricto: {"titulo":"MÁX 3 PALABRAS", "descripcion":"Una sola frase de impacto"}`;
+                
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        contents: [{ parts: [{ text: texto }] }], 
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: { responseMimeType: "application/json" } 
+                    })
+                });
 
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: texto }] }],
-                            systemInstruction: { parts: [{ text: systemPrompt }] },
-                            generationConfig: { 
-                                responseMimeType: "application/json"
-                            }
-                        })
-                    });
+                if (!response.ok) return { error: true, fallback: true };
 
-                    if (response.ok) {
-                        const result = await response.json();
-                        const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                        return JSON.parse(rawText);
-                    }
-                    
-                    if (response.status === 403 || response.status === 429) {
-                        await new Promise(r => setTimeout(r, delay));
-                        delay *= 2;
-                        continue;
-                    }
-                } catch (e) {
-                    await new Promise(r => setTimeout(r, delay));
-                    delay *= 2;
-                }
+                const data = await response.json();
+                const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                return JSON.parse(content);
+            } catch (e) { 
+                return { error: true, fallback: true }; 
             }
-
-            // Fallback en caso de fallo total de la API
-            const palabras = texto.split(' ');
-            return {
-                titulo: palabras.slice(0, 2).join(' ').toUpperCase() || "NUEVA PROPUESTA",
-                descripcion: texto.length > 70 ? texto.substring(0, 67) + "..." : texto
-            };
         }
 
         window.enviarPropuesta = async (e) => {
@@ -169,49 +152,48 @@
             feedback.classList.add('hidden');
             btn.disabled = true;
 
-            let timeLeft = 8;
+            let timeLeft = 10;
             timerDisplay.innerText = timeLeft;
-            alientoDisplay.innerText = mensajesAliento[Math.floor(Math.random() * mensajesAliento.length)];
+            alientoDisplay.innerText = mensajesAliento[0];
             
             const countdown = setInterval(() => {
                 timeLeft--;
-                if (timerDisplay) timerDisplay.innerText = Math.max(0, timeLeft);
+                timerDisplay.innerText = Math.max(0, timeLeft);
+                if (timeLeft % 3 === 0) alientoDisplay.innerText = mensajesAliento[Math.floor(Math.random() * mensajesAliento.length)];
                 if (timeLeft <= 0) clearInterval(countdown);
             }, 1000);
 
             try {
-                const resultadoIA = await procesarConIA(texto);
-                
-                if (resultadoIA && !resultadoIA.error) {
+                const resumen = await procesarConIA(texto);
+
+                if (resumen && !resumen.error) {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'propuestas'), {
-                        titulo: resultadoIA.titulo.toUpperCase(),
-                        descripcion: resultadoIA.descripcion,
+                        titulo: resumen.titulo.toUpperCase(),
+                        descripcion: resumen.descripcion,
                         votos: 1,
                         creado: serverTimestamp(),
                         uid: user.uid
                     });
-                    
                     input.value = "";
-                    clearInterval(countdown);
-                    loader.classList.add('hidden');
-                    btn.disabled = false;
                     window.navegar('ranking');
                 } else {
-                    throw new Error("Contenido no permitido");
+                    feedback.innerText = "Lo sentimos, intenta redactar tu idea de forma más clara.";
+                    feedback.classList.remove('hidden');
                 }
             } catch (err) {
-                clearInterval(countdown);
-                loader.classList.add('hidden');
-                feedback.innerText = "Error al procesar. Intenta con un mensaje más claro.";
+                feedback.innerText = "Hubo un inconveniente técnico. Inténtalo de nuevo.";
                 feedback.classList.remove('hidden');
+            } finally {
+                loader.classList.add('hidden');
                 btn.disabled = false;
+                clearInterval(countdown);
             }
         };
 
         function presentarNuevoDuelo() {
             const container = document.getElementById('contenedor-duelo');
             if (todasLasPropuestas.length < 2) {
-                container.innerHTML = `<div class="p-20 text-center animate-pulse text-indigo-400 font-black italic uppercase tracking-widest text-sm">Esperando propuestas ciudadanas...</div>`;
+                container.innerHTML = `<div class="p-20 text-center animate-pulse text-indigo-400 font-black italic uppercase tracking-widest">Sincronizando voluntad ciudadana...</div>`;
                 return;
             }
 
@@ -220,39 +202,45 @@
             dueloActualIds = seleccionadas.map(p => p.id);
 
             const card = (p, label, colorClass) => `
-                <button onclick="votar('${p.id}')" class="group relative p-8 bg-white border-b-[8px] border-slate-200 rounded-[2.5rem] hover:border-orange-500 hover:shadow-2xl transition-all text-left flex flex-col min-h-[320px] w-full animate-fade">
-                    <div class="flex justify-between items-center mb-6">
-                        <span class="text-[10px] font-black text-white ${colorClass} px-4 py-1.5 rounded-full uppercase tracking-widest">${label}</span>
-                        <div class="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all">
-                            <i class="fas fa-check text-sm"></i>
+                <button onclick="votar('${p.id}')" class="group relative p-8 bg-white border-b-[8px] border-slate-200 rounded-[2.5rem] hover:border-orange-500 hover:shadow-2xl transition-all text-left flex flex-col min-h-[350px] w-full animate-fade">
+                    <div class="flex justify-between items-center mb-8">
+                        <span class="text-[10px] font-black text-white ${colorClass} px-5 py-1.5 rounded-full uppercase tracking-[0.2em] shadow-md">${label}</span>
+                        <div class="h-12 w-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all transform group-hover:rotate-12">
+                            <i class="fas fa-check-circle text-xl"></i>
                         </div>
                     </div>
-                    <h3 class="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter mb-4 leading-none uppercase group-hover:text-indigo-600 transition-colors">${p.titulo}</h3>
-                    <p class="text-lg text-slate-500 font-semibold leading-tight flex-grow">${p.descripcion}</p>
+                    <h3 class="text-3xl md:text-5xl font-black text-slate-900 tracking-tighter mb-6 leading-[0.9] uppercase group-hover:text-indigo-600 transition-colors">${p.titulo}</h3>
+                    <p class="text-lg md:text-xl text-slate-500 font-semibold leading-snug flex-grow">${p.descripcion}</p>
+                    <div class="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between">
+                        <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest italic">Toca para elegir</span>
+                        <i class="fas fa-arrow-right text-orange-500 opacity-0 group-hover:opacity-100 group-hover:translate-x-2 transition-all"></i>
+                    </div>
                 </button>
             `;
 
             container.innerHTML = `
-                <div class="grid md:grid-cols-2 gap-6 relative">
-                    ${card(seleccionadas[0], 'OPCIÓN 1', 'bg-indigo-600')}
-                    <div class="hidden md:flex absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-20 w-12 h-12 bg-orange-600 text-white items-center justify-center rounded-xl font-black italic border-4 border-[#f4f7fa] shadow-xl rotate-12">VS</div>
-                    ${card(seleccionadas[1], 'OPCIÓN 2', 'bg-slate-900')}
+                <div class="grid md:grid-cols-2 gap-8 relative">
+                    ${card(seleccionadas[0], 'OPCIÓN A', 'bg-indigo-600')}
+                    <div class="hidden md:flex absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-20 w-16 h-16 bg-orange-600 text-white items-center justify-center rounded-2xl font-black italic border-[6px] border-[#f4f7fa] shadow-2xl rotate-12">VS</div>
+                    ${card(seleccionadas[1], 'OPCIÓN B', 'bg-slate-900')}
                 </div>
             `;
         }
 
         window.votar = async (id) => {
-            if (cargandoVoto || !user) return;
+            if (cargandoVoto) return;
             cargandoVoto = true;
-            document.getElementById('contenedor-duelo').style.opacity = "0.5";
+            document.getElementById('contenedor-duelo').style.opacity = "0.3";
 
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'propuestas', id);
                 await updateDoc(docRef, { votos: increment(1) });
-                dueloActualIds = []; 
-                presentarNuevoDuelo();
-                document.getElementById('contenedor-duelo').style.opacity = "1";
-                cargandoVoto = false;
+                setTimeout(() => {
+                    dueloActualIds = []; 
+                    presentarNuevoDuelo();
+                    document.getElementById('contenedor-duelo').style.opacity = "1";
+                    cargandoVoto = false;
+                }, 400);
             } catch (e) {
                 document.getElementById('contenedor-duelo').style.opacity = "1";
                 cargandoVoto = false;
@@ -261,119 +249,118 @@
 
         function renderizarRanking() {
             const container = document.getElementById('lista-ranking');
-            const sorted = [...todasLasPropuestas].sort((a,b) => (b.votos || 0) - (a.votos || 0)).slice(0, 20);
-            const maxVotos = sorted.length > 0 ? (sorted[0].votos || 1) : 1;
+            const sorted = [...todasLasPropuestas].sort((a,b) => (b.votos || 0) - (a.votos || 0)).slice(0, 30);
+            const maxVotosLider = sorted.length > 0 ? (sorted[0].votos || 0) : 0;
 
-            if (sorted.length === 0) {
-                container.innerHTML = `<div class="text-center py-20 text-slate-300 font-bold uppercase tracking-widest text-xs">Sin datos aún</div>`;
-                return;
-            }
+            container.innerHTML = sorted.map((p, i) => {
+                const votosPropuesta = p.votos || 0;
+                const apoyoGlobalPct = totalVotosGlobal > 0 ? ((votosPropuesta / totalVotosGlobal) * 100).toFixed(1) : "0.0";
+                const barraIntensidadPct = maxVotosLider > 0 ? ((votosPropuesta / maxVotosLider) * 100) : 0;
 
-            container.innerHTML = sorted.map((p, i) => `
-                <div class="bg-slate-50 p-6 rounded-[2rem] mb-4 border-l-8 border-indigo-600 flex flex-col md:flex-row items-center gap-6 shadow-sm animate-fade">
-                    <span class="text-4xl font-black text-slate-200 w-16 text-center italic">#${i+1}</span>
+                return `
+                <div class="bg-slate-50 p-8 rounded-[3rem] mb-6 border-l-[10px] border-indigo-600 flex flex-col md:flex-row items-center gap-8 shadow-sm animate-fade">
+                    <span class="text-6xl font-black text-slate-200 w-24 text-center italic">#${i+1}</span>
                     <div class="flex-1 w-full">
-                        <h4 class="font-black text-slate-900 uppercase text-2xl mb-1 tracking-tighter">${p.titulo}</h4>
-                        <p class="text-slate-500 font-bold text-sm mb-3">${p.descripcion}</p>
-                        <div class="w-full h-2 bg-white rounded-full overflow-hidden">
-                            <div class="h-full bg-indigo-600 rounded-full transition-all duration-700" style="width: ${(p.votos/maxVotos)*100}%"></div>
+                        <h4 class="font-black text-slate-900 uppercase text-3xl mb-1 tracking-tighter leading-none">${p.titulo || 'SIN TITULO'}</h4>
+                        <p class="text-slate-500 font-bold text-base mb-4">${p.descripcion || 'Sin descripción'}</p>
+                        <div class="w-full h-3 bg-white rounded-full overflow-hidden border border-slate-100">
+                            <div class="h-full bg-indigo-600 rounded-full transition-all duration-1000" style="width: ${barraIntensidadPct}%"></div>
                         </div>
                     </div>
-                    <div class="text-center md:text-right bg-white px-6 py-3 rounded-2xl border border-slate-100 min-w-[120px]">
-                        <span class="block text-2xl font-black text-indigo-900 leading-none">${p.votos || 0}</span>
-                        <span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">VOTOS</span>
+                    <div class="text-center md:text-right bg-white px-8 py-4 rounded-3xl min-w-[140px] border border-slate-100">
+                        <span class="block text-3xl font-black text-indigo-900 leading-none">${apoyoGlobalPct}%</span>
+                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1 block">${votosPropuesta.toLocaleString()} VOTOS</span>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         window.onload = conectarFirebase;
+
     </script>
 
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f4f7fa; }
-        .nav-btn { @apply px-8 py-3 font-black text-[10px] uppercase tracking-[0.2em] border-b-4 transition-all; }
+        .nav-btn { @apply px-10 py-4 font-black text-[11px] uppercase tracking-[0.3em] border-b-[4px] transition-all; }
         .active-nav { @apply text-indigo-600 border-indigo-600; }
         .inactive-nav { @apply text-slate-300 border-transparent hover:text-slate-500; }
-        @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade { animation: fade-in 0.5s ease-out forwards; }
+        @keyframes fade-in { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade { animation: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     </style>
 </head>
-<body class="selection:bg-indigo-100 selection:text-indigo-900">
+<body class="selection:bg-orange-500 selection:text-white overflow-x-hidden">
 
     <div id="app-interface" class="min-h-screen flex flex-col">
-        <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-3">
-            <div class="max-w-6xl mx-auto flex justify-between items-center">
-                <div class="font-black text-xl tracking-tighter uppercase italic">
+        <nav class="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-100 px-6 py-4 shadow-sm">
+            <div class="max-w-7xl mx-auto flex justify-between items-center">
+                <div class="font-black text-2xl tracking-tighter uppercase italic cursor-pointer" onclick="location.reload()">
                     DEMOCRACIA<span class="text-indigo-600">DIRECTACL</span>
                 </div>
-                <div class="flex bg-slate-50 p-1 rounded-xl gap-1">
-                    <button id="nav-duelo" onclick="navegar('duelo')" class="nav-btn active-nav rounded-lg">Arena</button>
-                    <button id="nav-ranking" onclick="navegar('ranking')" class="nav-btn inactive-nav rounded-lg">Ranking</button>
+                
+                <div class="flex bg-slate-100 p-1.5 rounded-2xl gap-1">
+                    <button id="nav-duelo" onclick="navegar('duelo')" class="nav-btn active-nav rounded-xl">Arena</button>
+                    <button id="nav-ranking" onclick="navegar('ranking')" class="nav-btn inactive-nav rounded-xl">Resultados</button>
                 </div>
             </div>
         </nav>
 
-        <main class="flex-1 max-w-5xl mx-auto w-full p-6 py-10">
+        <main class="flex-1 max-w-6xl mx-auto w-full p-6 py-12">
             
-            <!-- SECCIÓN ARENA -->
             <div id="seccion-duelo" class="animate-fade">
-                <div class="mb-10 text-center">
-                    <div class="inline-block bg-indigo-600 text-white px-4 py-1 rounded-full mb-4 shadow-lg">
-                        <span class="text-[9px] font-black uppercase tracking-widest">
-                            <span class="contador-votos-tiempo-real">0</span> Votos Ciudadanos
+                <div class="mb-12 text-center">
+                    <div class="inline-block bg-slate-900 text-white px-6 py-1.5 rounded-full mb-6">
+                        <span class="text-[9px] font-black uppercase tracking-[0.3em]">
+                            <span class="contador-votos-tiempo-real text-orange-400">0</span> Mandatos Ciudadanos
                         </span>
                     </div>
-                    <h2 class="text-4xl font-black uppercase tracking-tighter mb-2 italic">Duelo de Prioridades</h2>
-                    <p class="text-slate-400 font-bold uppercase tracking-widest text-[9px]">Selecciona la propuesta que Chile necesita ahora</p>
+                    <h2 class="text-4xl md:text-5xl font-black uppercase tracking-tighter mb-2 italic">Duelo de Ideas</h2>
+                    <p class="text-slate-400 font-bold uppercase tracking-widest text-[9px]">Elige la propuesta más urgente para Chile</p>
                 </div>
 
-                <div id="contenedor-duelo" class="mb-16 min-h-[300px]"></div>
+                <div id="contenedor-duelo" class="mb-20 min-h-[400px]"></div>
                 
-                <div class="max-w-2xl mx-auto">
-                    <div class="bg-white p-8 md:p-12 rounded-[3rem] shadow-xl border border-slate-100 relative overflow-hidden">
+                <div class="max-w-3xl mx-auto">
+                    <div class="bg-white p-10 md:p-14 rounded-[3.5rem] shadow-2xl relative overflow-hidden border-t-[10px] border-orange-500">
                         <div class="relative z-10">
-                            <h3 class="text-2xl font-black text-slate-900 mb-2 uppercase italic tracking-tighter">¿Tienes una mejor idea?</h3>
-                            <p class="text-slate-400 font-bold text-xs uppercase mb-6 tracking-widest">Súmala al registro nacional</p>
-                            
-                            <form onsubmit="enviarPropuesta(e)" class="space-y-4">
-                                <textarea id="input-idea" required maxlength="150" 
-                                    placeholder="Ej: Reducir dieta parlamentaria a la mitad..."
-                                    class="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl p-6 text-slate-900 font-bold focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 transition-all outline-none resize-none h-32"></textarea>
+                            <h3 class="text-[11px] font-black text-orange-900 uppercase tracking-[0.4em] mb-6 text-center">Nuevo Mandato Ciudadano</h3>
+
+                            <form onsubmit="enviarPropuesta(event)">
+                                <textarea id="input-idea" rows="2" placeholder="¿Qué debe cambiar en Chile?" class="w-full p-8 bg-slate-50 rounded-[2rem] border-4 border-transparent focus:border-indigo-100 focus:bg-white focus:ring-0 text-xl font-bold mb-8 resize-none transition-all placeholder:text-slate-200"></textarea>
                                 
-                                <button type="submit" id="btn-enviar" onclick="enviarPropuesta(event)"
-                                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-3xl uppercase tracking-[0.2em] shadow-xl hover:shadow-indigo-200 transition-all active:scale-95">
-                                    Enviar Propuesta
+                                <p id="form-feedback" class="hidden mb-8 text-[10px] font-black text-white bg-red-600 p-6 rounded-2xl text-center uppercase"></p>
+
+                                <div id="ia-loader" class="hidden absolute inset-0 bg-white/98 backdrop-blur-md rounded-[3.5rem] flex items-center justify-center z-20 px-10 text-center">
+                                    <div>
+                                        <div class="relative w-24 h-24 mx-auto mb-8">
+                                            <div class="absolute inset-0 border-[6px] border-slate-100 rounded-full"></div>
+                                            <div class="absolute inset-0 border-[6px] border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                            <div class="absolute inset-0 flex items-center justify-center">
+                                                <span id="timer-seconds" class="text-3xl font-black text-indigo-600">10</span>
+                                            </div>
+                                        </div>
+                                        <p id="texto-aliento" class="text-lg md:text-xl font-black text-slate-900 italic leading-tight mb-4 px-4"></p>
+                                        <p class="text-[9px] font-black uppercase tracking-[0.4em] text-slate-400">Preparando tu propuesta para la Arena</p>
+                                    </div>
+                                </div>
+
+                                <button id="btn-enviar" type="submit" class="w-full bg-slate-900 text-white py-8 rounded-[2rem] font-black text-lg uppercase tracking-[0.4em] hover:bg-indigo-600 transition-all shadow-xl active:scale-95 disabled:opacity-50">
+                                    Enviar a la Arena
                                 </button>
-                                <p id="form-feedback" class="hidden text-red-500 text-[10px] font-black uppercase text-center mt-2"></p>
                             </form>
-                        </div>
-                        
-                        <!-- Loader IA -->
-                        <div id="ia-loader" class="hidden absolute inset-0 bg-white/95 z-50 flex flex-col items-center justify-center p-8 text-center animate-fade">
-                            <div class="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-6"></div>
-                            <h4 class="text-xl font-black text-indigo-900 uppercase italic tracking-tighter mb-2">Procesando con IA</h4>
-                            <p id="texto-aliento" class="text-slate-400 font-bold text-xs uppercase tracking-widest mb-4">Sincronizando voluntad ciudadana...</p>
-                            <div class="text-3xl font-black text-indigo-600 italic">0:<span id="timer-seconds">08</span></div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- SECCIÓN RANKING -->
             <div id="seccion-ranking" class="hidden animate-fade">
-                <div class="mb-10 text-center">
-                    <h2 class="text-4xl font-black uppercase tracking-tighter italic">Mandato Popular</h2>
-                    <p class="text-slate-400 font-bold uppercase tracking-widest text-[9px]">Las propuestas con mayor respaldo nacional</p>
+                <div class="mb-16">
+                    <span class="bg-indigo-600 text-white px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-[0.3em]">Consenso Nacional</span>
+                    <h2 class="text-6xl md:text-8xl font-black italic tracking-tighter mt-6">Top <span class="text-indigo-600">30</span></h2>
+                    <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-4">Las ideas con mayor respaldo ciudadano en tiempo real</p>
                 </div>
-                <div id="lista-ranking" class="max-w-3xl mx-auto"></div>
+                <div id="lista-ranking" class="max-w-4xl mx-auto pb-40"></div>
             </div>
-
         </main>
-        
-        <footer class="p-8 text-center border-t border-slate-100 bg-white">
-            <div class="text-[9px] font-black text-slate-300 uppercase tracking-[0.5em]">Tecnología para la Soberanía Popular</div>
-        </footer>
     </div>
 
 </body>
