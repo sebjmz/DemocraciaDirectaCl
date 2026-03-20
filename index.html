@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DEMOCRACIADIRECTACL | El Mandato</title>
+    <title>DEMOCRACIADIRECTACL | Arena Directa</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Merriweather:ital,wght@0,900;1,900&display=swap" rel="stylesheet">
@@ -26,15 +26,19 @@
         const apiKey = ""; 
         let db, auth, user;
         let todasLasPropuestas = [];
-        let vistaActual = 'landing';
+        let vistaActual = 'duelo'; 
         let cargandoVoto = false;
         let totalVotosGlobal = 0;
         let dueloActualIds = []; 
 
-        const propuestasSemilla = [
-            { id: "seed1", titulo: "FIN AL CAE", descripcion: "Condonación total e inmediata de la deuda educativa.", votos: 142 },
-            { id: "seed2", titulo: "CÁRCEL EFECTIVA", descripcion: "No más beneficios para delitos violentos y corrupción.", votos: 98 },
-            { id: "seed3", titulo: "AGUA CIUDADANA", descripcion: "Nacionalización total de los derechos de agua.", votos: 215 }
+        const mensajesAliento = [
+            "Tu voz es la piedra angular del nuevo Chile.",
+            "Construyendo una nación más justa, segundo a segundo.",
+            "La soberanía reside en tu capacidad de proponer.",
+            "Por un futuro donde el pueblo siempre sea escuchado.",
+            "Tu idea está siendo procesada por el bien de la patria.",
+            "Unidos, estamos diseñando el Chile de la próxima década.",
+            "Gracias por comprometerte con el destino de nuestra tierra."
         ];
 
         async function conectarFirebase() {
@@ -50,7 +54,7 @@
                     }
                 });
             } catch (e) { 
-                todasLasPropuestas = propuestasSemilla;
+                console.error("Error conectando:", e);
                 actualizarComponentes();
             }
         }
@@ -66,11 +70,11 @@
                     nuevasPropuestas.push({ id: doc.id, ...data });
                 });
                 
-                todasLasPropuestas = nuevasPropuestas.length > 0 ? nuevasPropuestas : propuestasSemilla;
-                totalVotosGlobal = total || (nuevasPropuestas.length === 0 ? 455 : total);
+                todasLasPropuestas = nuevasPropuestas;
+                totalVotosGlobal = total;
                 actualizarComponentes();
             }, (error) => {
-                todasLasPropuestas = propuestasSemilla;
+                console.error("Error en tiempo real:", error);
                 actualizarComponentes();
             });
         }
@@ -83,14 +87,6 @@
             if (vistaActual === 'duelo' && dueloActualIds.length === 0) presentarNuevoDuelo();
         }
 
-        window.entrarALaArena = () => {
-            vistaActual = 'duelo';
-            document.getElementById('landing-page').classList.add('hidden');
-            document.getElementById('app-interface').classList.remove('hidden');
-            presentarNuevoDuelo();
-            window.scrollTo(0, 0);
-        };
-
         window.navegar = (vista) => {
             vistaActual = vista;
             document.getElementById('seccion-duelo').classList.toggle('hidden', vista !== 'duelo');
@@ -100,12 +96,12 @@
             const btnRanking = document.getElementById('nav-ranking');
             
             if (vista === 'duelo') {
-                btnDuelo.className = 'nav-btn active-nav rounded-2xl';
-                btnRanking.className = 'nav-btn inactive-nav rounded-2xl';
+                btnDuelo.className = 'nav-btn active-nav rounded-xl';
+                btnRanking.className = 'nav-btn inactive-nav rounded-xl';
                 document.body.style.backgroundColor = "#f4f7fa";
             } else {
-                btnDuelo.className = 'nav-btn inactive-nav rounded-2xl';
-                btnRanking.className = 'nav-btn active-nav rounded-2xl';
+                btnDuelo.className = 'nav-btn inactive-nav rounded-xl';
+                btnRanking.className = 'nav-btn active-nav rounded-xl';
                 document.body.style.backgroundColor = "#ffffff";
             }
             
@@ -116,10 +112,10 @@
 
         async function procesarConIA(texto) {
             try {
-                const systemPrompt = `Eres un sintetizador de voluntad popular.
-                1. Resume la idea de forma CRUDA, CLARA y CORTA. Sin adornos políticos ni retórica.
-                2. Si hay insultos, calumnias, odio o datos personales, responde estrictamente: {"error": true}.
-                3. Formato JSON: {"titulo":"MÁX 3 PALABRAS EN MAYÚSCULAS", "descripcion":"Una sola frase de impacto directo"}`;
+                const systemPrompt = `Eres un sintetizador de voluntad popular para Chile.
+                1. Resume la idea de forma CRUDA, CLARA y CORTA.
+                2. Si hay insultos o spam, devuelve: {"error": true}.
+                3. Formato JSON: {"titulo":"MÁX 3 PALABRAS", "descripcion":"Una sola frase de impacto"}`;
                 
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
                     method: 'POST',
@@ -132,9 +128,7 @@
                 });
                 const data = await response.json();
                 const result = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "{}");
-                
-                if (result.error) return null;
-                return result;
+                return result.error ? null : result;
             } catch (e) { 
                 return { titulo: "NUEVA IDEA", descripcion: texto.substring(0, 60) }; 
             }
@@ -150,59 +144,60 @@
             const loader = document.getElementById('ia-loader');
             const feedback = document.getElementById('form-feedback');
             const timerDisplay = document.getElementById('timer-seconds');
+            const alientoDisplay = document.getElementById('texto-aliento');
             
             loader.classList.remove('hidden');
             feedback.classList.add('hidden');
             btn.disabled = true;
 
-            // Iniciar cuenta regresiva de 15 segundos
-            let timeLeft = 15;
+            let timeLeft = 30;
             timerDisplay.innerText = timeLeft;
+            alientoDisplay.innerText = mensajesAliento[Math.floor(Math.random() * mensajesAliento.length)];
             
             const countdown = setInterval(() => {
                 timeLeft--;
                 timerDisplay.innerText = timeLeft;
+                if (timeLeft % 7 === 0) alientoDisplay.innerText = mensajesAliento[Math.floor(Math.random() * mensajesAliento.length)];
                 if (timeLeft <= 0) clearInterval(countdown);
             }, 1000);
 
-            // Llamada a la IA (en paralelo a la espera de seguridad)
             const tareaIA = procesarConIA(texto);
 
-            // Forzar espera de 15 segundos antes de publicar
             setTimeout(async () => {
                 const resumen = await tareaIA;
-                
                 if (!resumen) {
                     loader.classList.add('hidden');
-                    feedback.innerText = "CONTENIDO RECHAZADO: VIOLA LAS NORMAS DE RESPETO O PRIVACIDAD.";
+                    feedback.innerText = "CONTENIDO RECHAZADO: NO CUMPLE LAS NORMAS.";
                     feedback.classList.remove('hidden');
                     btn.disabled = false;
+                    clearInterval(countdown);
                     return;
                 }
 
                 try {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'propuestas'), {
                         ...resumen,
-                        votos: 1, // Empieza con el voto del autor
+                        votos: 1,
                         creado: serverTimestamp(),
                         uid: user.uid
                     });
                     input.value = "";
                     window.navegar('ranking');
                 } catch (err) {
-                    feedback.innerText = "ERROR AL PUBLICAR. REINTENTA.";
+                    feedback.innerText = "ERROR DE CONEXIÓN. REINTENTE.";
                     feedback.classList.remove('hidden');
                 } finally {
                     loader.classList.add('hidden');
                     btn.disabled = false;
+                    clearInterval(countdown);
                 }
-            }, 15000);
+            }, 30000);
         };
 
         function presentarNuevoDuelo() {
             const container = document.getElementById('contenedor-duelo');
             if (todasLasPropuestas.length < 2) {
-                container.innerHTML = `<div class="p-20 text-center animate-pulse text-indigo-400 font-black italic uppercase tracking-widest">Sincronizando voluntades...</div>`;
+                container.innerHTML = `<div class="p-20 text-center animate-pulse text-indigo-400 font-black italic uppercase tracking-widest">Sincronizando voluntad ciudadana...</div>`;
                 return;
             }
 
@@ -211,25 +206,18 @@
             dueloActualIds = seleccionadas.map(p => p.id);
 
             const card = (p, label, colorClass) => `
-                <button onclick="votar('${p.id}')" class="group relative p-8 bg-white border-b-[8px] border-slate-200 rounded-[2.5rem] hover:border-orange-500 hover:shadow-2xl transition-all text-left flex flex-col min-h-[350px] w-full animate-fade overflow-hidden">
-                    <div class="absolute top-0 right-0 w-24 h-24 bg-slate-50 rounded-bl-full -mr-12 -mt-12 group-hover:bg-orange-50 transition-colors"></div>
-                    
-                    <div class="flex justify-between items-center mb-8 relative z-10">
+                <button onclick="votar('${p.id}')" class="group relative p-8 bg-white border-b-[8px] border-slate-200 rounded-[2.5rem] hover:border-orange-500 hover:shadow-2xl transition-all text-left flex flex-col min-h-[350px] w-full animate-fade">
+                    <div class="flex justify-between items-center mb-8">
                         <span class="text-[10px] font-black text-white ${colorClass} px-5 py-1.5 rounded-full uppercase tracking-[0.2em] shadow-md">${label}</span>
-                        <div class="h-12 w-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all transform group-hover:scale-110 shadow-sm">
+                        <div class="h-12 w-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all transform group-hover:rotate-12">
                             <i class="fas fa-check-circle text-xl"></i>
                         </div>
                     </div>
-                    
-                    <h3 class="text-3xl md:text-5xl font-black text-slate-900 tracking-tighter mb-6 leading-[0.9] uppercase group-hover:text-indigo-600 transition-colors relative z-10">${p.titulo}</h3>
-                    <p class="text-lg md:text-xl text-slate-500 font-semibold leading-snug flex-grow relative z-10">${p.descripcion}</p>
-                    
-                    <div class="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between relative z-10">
-                        <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest italic">Haz clic para decidir</span>
-                        <div class="flex items-center gap-2 text-orange-600 font-black text-[10px] opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                            <span>VOTAR</span>
-                            <i class="fas fa-arrow-right"></i>
-                        </div>
+                    <h3 class="text-3xl md:text-5xl font-black text-slate-900 tracking-tighter mb-6 leading-[0.9] uppercase group-hover:text-indigo-600 transition-colors">${p.titulo}</h3>
+                    <p class="text-lg md:text-xl text-slate-500 font-semibold leading-snug flex-grow">${p.descripcion}</p>
+                    <div class="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between">
+                        <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest italic">Toca para elegir</span>
+                        <i class="fas fa-arrow-right text-orange-500 opacity-0 group-hover:opacity-100 group-hover:translate-x-2 transition-all"></i>
                     </div>
                 </button>
             `;
@@ -237,7 +225,7 @@
             container.innerHTML = `
                 <div class="grid md:grid-cols-2 gap-8 relative">
                     ${card(seleccionadas[0], 'OPCIÓN A', 'bg-indigo-600')}
-                    <div class="hidden md:flex absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-20 w-20 h-20 bg-orange-600 text-white items-center justify-center rounded-2xl font-black italic border-[8px] border-[#f4f7fa] shadow-2xl rotate-12">VS</div>
+                    <div class="hidden md:flex absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-20 w-16 h-16 bg-orange-600 text-white items-center justify-center rounded-2xl font-black italic border-[6px] border-[#f4f7fa] shadow-2xl rotate-12">VS</div>
                     ${card(seleccionadas[1], 'OPCIÓN B', 'bg-slate-900')}
                 </div>
             `;
@@ -249,10 +237,8 @@
             document.getElementById('contenedor-duelo').style.opacity = "0.3";
 
             try {
-                if (!id.startsWith('seed')) {
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'propuestas', id);
-                    await updateDoc(docRef, { votos: increment(1) });
-                }
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'propuestas', id);
+                await updateDoc(docRef, { votos: increment(1) });
                 setTimeout(() => {
                     dueloActualIds = []; 
                     presentarNuevoDuelo();
@@ -276,18 +262,18 @@
                 const barraIntensidadPct = maxVotosLider > 0 ? ((votosPropuesta / maxVotosLider) * 100) : 0;
 
                 return `
-                <div class="bg-slate-50 p-8 rounded-[3rem] mb-8 border-l-[10px] border-indigo-600 flex flex-col md:flex-row items-center gap-8 shadow-sm hover:shadow-xl transition-all animate-fade">
+                <div class="bg-slate-50 p-8 rounded-[3rem] mb-6 border-l-[10px] border-indigo-600 flex flex-col md:flex-row items-center gap-8 shadow-sm animate-fade">
                     <span class="text-6xl font-black text-slate-200 w-24 text-center italic">#${i+1}</span>
                     <div class="flex-1 w-full">
-                        <h4 class="font-black text-slate-900 uppercase text-3xl mb-2 tracking-tighter leading-none">${p.titulo}</h4>
-                        <p class="text-slate-500 font-bold text-base mb-6">${p.descripcion}</p>
-                        <div class="w-full h-4 bg-white rounded-full overflow-hidden border-2 border-white shadow-inner">
+                        <h4 class="font-black text-slate-900 uppercase text-3xl mb-1 tracking-tighter leading-none">${p.titulo}</h4>
+                        <p class="text-slate-500 font-bold text-base mb-4">${p.descripcion}</p>
+                        <div class="w-full h-3 bg-white rounded-full overflow-hidden border border-slate-100">
                             <div class="h-full bg-indigo-600 rounded-full transition-all duration-1000" style="width: ${barraIntensidadPct}%"></div>
                         </div>
                     </div>
-                    <div class="text-center md:text-right bg-white px-8 py-6 rounded-[2rem] shadow-sm min-w-[150px] border border-slate-100">
-                        <span class="block text-4xl font-black text-indigo-900 leading-none">${apoyoGlobalPct}%</span>
-                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-2 block">APOYO</span>
+                    <div class="text-center md:text-right bg-white px-8 py-4 rounded-3xl min-w-[140px] border border-slate-100">
+                        <span class="block text-3xl font-black text-indigo-900 leading-none">${apoyoGlobalPct}%</span>
+                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1 block">${votosPropuesta.toLocaleString()} VOTOS</span>
                     </div>
                 </div>
             `}).join('');
@@ -298,135 +284,87 @@
     </script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f4f7fa; transition: background-color 0.5s ease; }
-        h1, .hero-title { font-family: 'Merriweather', serif; font-weight: 900; }
-        
-        .nav-btn { @apply px-12 py-4 font-black text-[12px] uppercase tracking-[0.4em] border-b-[4px] transition-all duration-300; }
+        body { font-family: 'Inter', sans-serif; background-color: #f4f7fa; }
+        .nav-btn { @apply px-10 py-4 font-black text-[11px] uppercase tracking-[0.3em] border-b-[4px] transition-all; }
         .active-nav { @apply text-indigo-600 border-indigo-600; }
-        .inactive-nav { @apply text-slate-300 border-transparent hover:text-slate-500 hover:bg-slate-100/50; }
-        
-        .text-gradient { background: linear-gradient(to right, #4f46e5, #f97316); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        
-        @keyframes fade-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade { animation: fade-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .inactive-nav { @apply text-slate-300 border-transparent hover:text-slate-500; }
+        @keyframes fade-in { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade { animation: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     </style>
 </head>
 <body class="selection:bg-orange-500 selection:text-white overflow-x-hidden">
 
-    <!-- LANDING PAGE -->
-    <div id="landing-page" class="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-white relative overflow-hidden">
-        <div class="max-w-4xl animate-fade relative z-10">
-            <div class="inline-flex items-center gap-4 bg-slate-900 px-8 py-4 rounded-full text-white mb-16 shadow-2xl">
-                <div class="w-3 h-3 bg-orange-500 rounded-full animate-ping"></div>
-                <span class="text-[10px] font-black uppercase tracking-[0.3em]">
-                    <span class="contador-votos-tiempo-real text-orange-400">0</span> voluntades sincronizadas
-                </span>
-            </div>
-
-            <h1 class="text-6xl sm:text-7xl md:text-8xl font-black text-[#050a1e] leading-[0.85] tracking-tighter mb-12 hero-title">
-                Chile es<br><span class="text-gradient italic">tu mandato</span>.
-            </h1>
-            
-            <p class="text-xl md:text-2xl text-slate-400 font-medium mb-16 max-w-2xl mx-auto leading-tight italic tracking-tight">
-                La plataforma digital donde tus decisiones marcan el camino de la nación.
-            </p>
-
-            <button onclick="entrarALaArena()" class="group relative px-16 py-8 bg-slate-900 text-white font-black rounded-full hover:bg-indigo-600 transition-all shadow-xl hover:scale-105 active:scale-95 overflow-hidden">
-                <span class="relative z-10 uppercase tracking-[0.5em] text-sm">Entrar a Decidir</span>
-                <i class="fas fa-arrow-right ml-4 text-orange-400"></i>
-            </button>
-        </div>
-    </div>
-
-    <!-- APP INTERFACE -->
-    <div id="app-interface" class="hidden min-h-screen flex flex-col">
-        <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-3xl border-b border-slate-100 px-8 py-4 shadow-sm">
-            <div class="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center gap-10">
-                <div class="font-black text-2xl md:text-3xl tracking-tighter uppercase italic leading-none cursor-pointer" onclick="location.reload()">
+    <div id="app-interface" class="min-h-screen flex flex-col">
+        <nav class="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-100 px-6 py-4 shadow-sm">
+            <div class="max-w-7xl mx-auto flex justify-between items-center">
+                <div class="font-black text-2xl tracking-tighter uppercase italic cursor-pointer" onclick="location.reload()">
                     DEMOCRACIA<span class="text-indigo-600">DIRECTACL</span>
                 </div>
                 
-                <div class="flex bg-slate-100/50 p-2 rounded-3xl border border-slate-200/50 gap-2">
-                    <button id="nav-duelo" onclick="navegar('duelo')" class="nav-btn active-nav rounded-2xl">Decide</button>
-                    <button id="nav-ranking" onclick="navegar('ranking')" class="nav-btn inactive-nav rounded-2xl">Top 30</button>
-                </div>
-
-                <div class="hidden xl:flex items-center gap-4 bg-slate-900 px-6 py-3 rounded-2xl text-white">
-                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span class="text-[9px] font-black uppercase tracking-[0.2em]">
-                        Soberanía: <span class="contador-votos-tiempo-real text-orange-400">0</span>
-                    </span>
+                <div class="flex bg-slate-100 p-1.5 rounded-2xl gap-1">
+                    <button id="nav-duelo" onclick="navegar('duelo')" class="nav-btn active-nav rounded-xl">Arena</button>
+                    <button id="nav-ranking" onclick="navegar('ranking')" class="nav-btn inactive-nav rounded-xl">Resultados</button>
                 </div>
             </div>
         </nav>
 
-        <main class="flex-1 max-w-6xl mx-auto w-full p-6 py-16 md:py-24">
+        <main class="flex-1 max-w-6xl mx-auto w-full p-6 py-12">
+            
+            <!-- SECCIÓN DUELO -->
             <div id="seccion-duelo" class="animate-fade">
-                <div class="mb-16 text-center">
-                    <h2 class="text-4xl md:text-5xl font-black uppercase tracking-tighter mb-4 italic">Elige la Prioridad</h2>
-                    <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px] bg-slate-100 inline-block px-5 py-2 rounded-full">Decide entre dos propuestas ciudadanas</p>
+                <div class="mb-12 text-center">
+                    <div class="inline-block bg-slate-900 text-white px-6 py-1.5 rounded-full mb-6">
+                        <span class="text-[9px] font-black uppercase tracking-[0.3em]">
+                            <span class="contador-votos-tiempo-real text-orange-400">0</span> Mandatos Ciudadanos
+                        </span>
+                    </div>
+                    <h2 class="text-4xl md:text-5xl font-black uppercase tracking-tighter mb-2 italic">Duelo de Ideas</h2>
+                    <p class="text-slate-400 font-bold uppercase tracking-widest text-[9px]">Elige la propuesta más urgente para Chile</p>
                 </div>
 
-                <div id="contenedor-duelo" class="mb-24 min-h-[400px]"></div>
+                <div id="contenedor-duelo" class="mb-20 min-h-[400px]"></div>
                 
-                <!-- Formulario de Propuesta con Contador de 15s -->
                 <div class="max-w-3xl mx-auto">
-                    <div class="bg-white p-10 md:p-16 rounded-[4rem] shadow-2xl relative overflow-hidden border-t-[12px] border-orange-500">
+                    <div class="bg-white p-10 md:p-14 rounded-[3.5rem] shadow-2xl relative overflow-hidden border-t-[10px] border-orange-500">
                         <div class="relative z-10">
-                            <div class="flex items-center gap-6 mb-12">
-                                <div class="h-16 w-16 rounded-2xl bg-orange-600 text-white flex items-center justify-center text-3xl shadow-lg rotate-3">
-                                    <i class="fas fa-plus"></i>
-                                </div>
-                                <div>
-                                    <h3 class="text-[11px] font-black text-orange-900 uppercase tracking-[0.4em] mb-1">Nueva Propuesta</h3>
-                                    <p class="text-slate-400 font-bold text-sm italic">Define el futuro en una frase corta.</p>
-                                </div>
-                            </div>
+                            <h3 class="text-[11px] font-black text-orange-900 uppercase tracking-[0.4em] mb-6 text-center">Nuevo Mandato Ciudadano</h3>
 
                             <form onsubmit="enviarPropuesta(event)">
-                                <textarea id="input-idea" rows="2" placeholder="Si fueras Presidente, ¿qué harías hoy?" class="w-full p-10 bg-slate-50 rounded-[2.5rem] border-4 border-transparent focus:border-indigo-100 focus:bg-white focus:ring-0 text-2xl font-black mb-10 resize-none transition-all placeholder:text-slate-200 leading-tight"></textarea>
+                                <textarea id="input-idea" rows="2" placeholder="¿Qué debe cambiar en Chile?" class="w-full p-8 bg-slate-50 rounded-[2rem] border-4 border-transparent focus:border-indigo-100 focus:bg-white focus:ring-0 text-xl font-bold mb-8 resize-none transition-all placeholder:text-slate-200"></textarea>
                                 
-                                <p id="form-feedback" class="hidden mb-10 text-[10px] font-black text-white bg-red-600 p-8 rounded-3xl animate-fade uppercase tracking-widest text-center shadow-lg"></p>
+                                <p id="form-feedback" class="hidden mb-8 text-[10px] font-black text-white bg-red-600 p-6 rounded-2xl text-center uppercase"></p>
 
-                                <!-- Loader con Cuenta Regresiva -->
-                                <div id="ia-loader" class="hidden absolute inset-0 bg-white/95 backdrop-blur-3xl rounded-[4rem] flex items-center justify-center z-20 px-8">
-                                    <div class="text-center w-full">
-                                        <div class="relative w-32 h-32 mx-auto mb-10">
-                                            <div class="absolute inset-0 border-[8px] border-slate-100 rounded-full"></div>
-                                            <div class="absolute inset-0 border-[8px] border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                <div id="ia-loader" class="hidden absolute inset-0 bg-white/98 backdrop-blur-md rounded-[3.5rem] flex items-center justify-center z-20 px-10 text-center">
+                                    <div>
+                                        <div class="relative w-24 h-24 mx-auto mb-8">
+                                            <div class="absolute inset-0 border-[6px] border-slate-100 rounded-full"></div>
+                                            <div class="absolute inset-0 border-[6px] border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
                                             <div class="absolute inset-0 flex items-center justify-center">
-                                                <span id="timer-seconds" class="text-4xl font-black text-indigo-600">15</span>
+                                                <span id="timer-seconds" class="text-3xl font-black text-indigo-600">30</span>
                                             </div>
                                         </div>
-                                        <p class="text-[11px] font-black uppercase tracking-[0.5em] text-slate-900 mb-2">SINTETIZANDO MANDATO</p>
-                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest italic">La IA está estructurando tu idea para el debate nacional...</p>
+                                        <p id="texto-aliento" class="text-lg md:text-xl font-black text-slate-900 italic leading-tight mb-4 px-4"></p>
+                                        <p class="text-[9px] font-black uppercase tracking-[0.4em] text-slate-400">Validando autenticidad de la propuesta</p>
                                     </div>
                                 </div>
 
-                                <button id="btn-enviar" type="submit" class="w-full bg-slate-900 text-white py-10 rounded-[2.5rem] font-black text-xl uppercase tracking-[0.4em] hover:bg-indigo-600 transition-all shadow-2xl active:scale-95 group disabled:opacity-50">
-                                    Lanzar a Debate <i class="fas fa-paper-plane ml-4 text-orange-500 group-hover:translate-x-2 transition-transform"></i>
+                                <button id="btn-enviar" type="submit" class="w-full bg-slate-900 text-white py-8 rounded-[2rem] font-black text-lg uppercase tracking-[0.4em] hover:bg-indigo-600 transition-all shadow-xl active:scale-95 disabled:opacity-50">
+                                    Enviar a la Arena
                                 </button>
-                                <p class="text-center mt-8 text-[9px] text-slate-300 font-black uppercase tracking-[0.2em] italic">Seguridad activa: 1 propuesta por cada 15 segundos.</p>
                             </form>
                         </div>
                     </div>
                 </div>
             </div>
 
+            <!-- SECCIÓN RANKING -->
             <div id="seccion-ranking" class="hidden animate-fade">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-24 gap-12">
-                    <div class="max-w-2xl">
-                        <span class="inline-block bg-orange-600 text-white px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-[0.4em] mb-8">Ranking Ciudadano</span>
-                        <h2 class="text-5xl md:text-8xl font-black italic tracking-tighter leading-[0.85] mb-8 text-slate-900">Top <span class="text-indigo-600">30</span></h2>
-                    </div>
-                    <div class="bg-slate-900 p-10 rounded-[3.5rem] text-white shadow-2xl flex items-center gap-10 border-b-[12px] border-indigo-600">
-                        <div>
-                            <span class="block text-[9px] font-black text-indigo-400 uppercase tracking-[0.4em] mb-2 italic">Muestra Total</span>
-                            <span class="block text-6xl font-black contador-votos-tiempo-real leading-none tracking-tighter">0</span>
-                        </div>
-                    </div>
+                <div class="mb-16">
+                    <span class="bg-indigo-600 text-white px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-[0.3em]">Consenso Nacional</span>
+                    <h2 class="text-6xl md:text-8xl font-black italic tracking-tighter mt-6">Top <span class="text-indigo-600">30</span></h2>
+                    <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-4">Las ideas con mayor respaldo ciudadano en tiempo real</p>
                 </div>
-                <div id="lista-ranking" class="max-w-5xl mx-auto pb-48"></div>
+                <div id="lista-ranking" class="max-w-4xl mx-auto pb-40"></div>
             </div>
         </main>
     </div>
