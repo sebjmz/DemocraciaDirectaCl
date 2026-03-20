@@ -10,20 +10,14 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, doc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyBWxTFJGOFesMgIyp5C65qQEnFr5_dCxcU",
-            authDomain: "democraciadirectacl-b75ad.firebaseapp.com",
-            projectId: "democraciadirectacl-b75ad",
-            storageBucket: "democraciadirectacl-b75ad.firebasestorage.app",
-            messagingSenderId: "837131448793",
-            appId: "1:837131448793:web:2b5d2aef6e925bac8d29c8"
-        };
+        // Configuración de Firebase proporcionada
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'democraciadirectacl';
+        const apiKey = "GEMINI_API_KEY"; // Dejar vacío: el entorno lo inyecta automáticamente
 
-        const appId = 'democraciadirectacl';
-        const apiKey = ""; // La clave se inyecta en el entorno de ejecución
         let db, auth, user;
         let todasLasPropuestas = [];
         let vistaActual = 'duelo'; 
@@ -46,7 +40,14 @@
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
-                await signInAnonymously(auth);
+                
+                // Priorizar token personalizado si existe
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
                 onAuthStateChanged(auth, (u) => {
                     if (u) {
                         user = u;
@@ -60,6 +61,7 @@
         }
 
         function escucharDatos() {
+            if (!user) return;
             const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'propuestas');
             onSnapshot(colRef, (snapshot) => {
                 let total = 0;
@@ -75,7 +77,6 @@
                 actualizarComponentes();
             }, (error) => {
                 console.error("Error en tiempo real:", error);
-                actualizarComponentes();
             });
         }
 
@@ -110,43 +111,41 @@
             window.scrollTo(0, 0);
         };
 
-        async function procesarConIA(texto) {
-            try {
-                const systemPrompt = `Eres un sintetizador de voluntad popular para Chile.
-                1. Resume la idea de forma CRUDA, CLARA y CORTA.
-                2. Si hay insultos o spam, devuelve: {"error": true}.
-                3. Formato JSON estricto: {"titulo":"MÁX 3 PALABRAS", "descripcion":"Una sola frase de impacto"}`;
-                
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        contents: [{ parts: [{ text: texto }] }], 
-                        systemInstruction: { parts: [{ text: systemPrompt }] },
-                        generationConfig: { responseMimeType: "application/json" } 
-                    })
-                });
+        // Función con reintentos y manejo de errores 403
+        async function procesarConIA(texto, retries = 5) {
+            const systemPrompt = `Eres un sintetizador de voluntad popular para Chile. 
+            Resume la idea en un JSON: {"titulo":"MAX 3 PALABRAS", "descripcion":"Una frase de impacto"}. 
+            Si es ofensivo devuelve {"error":true}.`;
 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`API_ERROR: ${response.status} - ${errorText}`);
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: texto }] }],
+                            systemInstruction: { parts: [{ text: systemPrompt }] },
+                            generationConfig: { responseMimeType: "application/json" }
+                        })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                        return JSON.parse(content);
+                    }
+
+                    if (response.status === 403) {
+                        console.error("DEBUG: Acceso denegado (403). Verificando entorno...");
+                    }
+
+                    // Exponential backoff
+                    await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+                } catch (e) {
+                    console.error(`Intento ${i+1} fallido:`, e);
                 }
-
-                const data = await response.json();
-                const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                
-                if (!content) {
-                    throw new Error("Respuesta de IA vacía (Posible bloqueo de seguridad/Safety filter)");
-                }
-
-                const result = JSON.parse(content);
-                return result.error ? null : result;
-
-            } catch (e) { 
-                console.error("DEBUG IA:", e.message);
-                // Retornamos el error para que el frontend lo muestre
-                return { error_debug: e.message }; 
             }
+            return { error: true, message: "No se pudo conectar con el cerebro de la Arena." };
         }
 
         window.enviarPropuesta = async (e) => {
@@ -171,56 +170,44 @@
             
             const countdown = setInterval(() => {
                 timeLeft--;
-                timerDisplay.innerText = timeLeft;
-                if (timeLeft % 7 === 0) alientoDisplay.innerText = mensajesAliento[Math.floor(Math.random() * mensajesAliento.length)];
+                if (timerDisplay) timerDisplay.innerText = timeLeft;
+                if (timeLeft % 7 === 0 && alientoDisplay) alientoDisplay.innerText = mensajesAliento[Math.floor(Math.random() * mensajesAliento.length)];
                 if (timeLeft <= 0) clearInterval(countdown);
             }, 1000);
 
-            // Iniciamos la llamada inmediatamente
-            const tareaIA = procesarConIA(texto);
+            // Iniciamos proceso de IA de inmediato
+            const resultadoIA = await procesarConIA(texto);
 
-            // Forzamos la espera de los 30 segundos solicitados para la experiencia de usuario
+            // Esperamos a que el cronómetro termine para dar solemnidad
             setTimeout(async () => {
-                const resumen = await tareaIA;
-                
-                // Si la IA devolvió un error de depuración
-                if (resumen && resumen.error_debug) {
+                clearInterval(countdown);
+                if (resultadoIA && !resultadoIA.error) {
+                    try {
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'propuestas'), {
+                            titulo: resultadoIA.titulo.toUpperCase(),
+                            descripcion: resultadoIA.descripcion,
+                            votos: 1,
+                            creado: serverTimestamp(),
+                            uid: user.uid
+                        });
+                        input.value = "";
+                        loader.classList.add('hidden');
+                        btn.disabled = false;
+                        window.navegar('ranking');
+                    } catch (dbErr) {
+                        console.error("Error al guardar:", dbErr);
+                        feedback.innerText = "Error al conectar con la base de datos.";
+                        feedback.classList.remove('hidden');
+                        loader.classList.add('hidden');
+                        btn.disabled = false;
+                    }
+                } else {
                     loader.classList.add('hidden');
-                    feedback.innerHTML = `ERROR TÉCNICO: <br><span class="text-[8px] opacity-70">${resumen.error_debug}</span>`;
+                    feedback.innerText = resultadoIA?.message || "La idea no pudo ser procesada. Intenta con otro lenguaje.";
                     feedback.classList.remove('hidden');
                     btn.disabled = false;
-                    clearInterval(countdown);
-                    return;
                 }
-
-                if (!resumen) {
-                    loader.classList.add('hidden');
-                    feedback.innerText = "CONTENIDO RECHAZADO: NO CUMPLE LAS NORMAS.";
-                    feedback.classList.remove('hidden');
-                    btn.disabled = false;
-                    clearInterval(countdown);
-                    return;
-                }
-
-                try {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'propuestas'), {
-                        titulo: resumen.titulo || "Sin título",
-                        descripcion: resumen.descripcion || texto.substring(0, 100),
-                        votos: 1,
-                        creado: serverTimestamp(),
-                        uid: user.uid
-                    });
-                    input.value = "";
-                    window.navegar('ranking');
-                } catch (err) {
-                    feedback.innerText = "ERROR DE FIREBASE: " + err.message;
-                    feedback.classList.remove('hidden');
-                } finally {
-                    loader.classList.add('hidden');
-                    btn.disabled = false;
-                    clearInterval(countdown);
-                }
-            }, 30000);
+            }, Math.max(0, timeLeft * 1000));
         };
 
         function presentarNuevoDuelo() {
@@ -261,7 +248,7 @@
         }
 
         window.votar = async (id) => {
-            if (cargandoVoto) return;
+            if (cargandoVoto || !user) return;
             cargandoVoto = true;
             document.getElementById('contenedor-duelo').style.opacity = "0.3";
 
@@ -285,6 +272,11 @@
             const sorted = [...todasLasPropuestas].sort((a,b) => (b.votos || 0) - (a.votos || 0)).slice(0, 30);
             const maxVotosLider = sorted.length > 0 ? (sorted[0].votos || 0) : 0;
 
+            if (sorted.length === 0) {
+                container.innerHTML = `<div class="text-center py-20 text-slate-300 font-bold uppercase tracking-widest">No hay propuestas procesadas aún</div>`;
+                return;
+            }
+
             container.innerHTML = sorted.map((p, i) => {
                 const votosPropuesta = p.votos || 0;
                 const apoyoGlobalPct = totalVotosGlobal > 0 ? ((votosPropuesta / totalVotosGlobal) * 100).toFixed(1) : "0.0";
@@ -294,8 +286,8 @@
                 <div class="bg-slate-50 p-8 rounded-[3rem] mb-6 border-l-[10px] border-indigo-600 flex flex-col md:flex-row items-center gap-8 shadow-sm animate-fade">
                     <span class="text-6xl font-black text-slate-200 w-24 text-center italic">#${i+1}</span>
                     <div class="flex-1 w-full">
-                        <h4 class="font-black text-slate-900 uppercase text-3xl mb-1 tracking-tighter leading-none">${p.titulo}</h4>
-                        <p class="text-slate-500 font-bold text-base mb-4">${p.descripcion}</p>
+                        <h4 class="font-black text-slate-900 uppercase text-3xl mb-1 tracking-tighter leading-none">${p.titulo || 'IDEA CIUDADANA'}</h4>
+                        <p class="text-slate-500 font-bold text-base mb-4">${p.descripcion || 'Propuesta en proceso de validación'}</p>
                         <div class="w-full h-3 bg-white rounded-full overflow-hidden border border-slate-100">
                             <div class="h-full bg-indigo-600 rounded-full transition-all duration-1000" style="width: ${barraIntensidadPct}%"></div>
                         </div>
@@ -339,10 +331,9 @@
 
         <main class="flex-1 max-w-6xl mx-auto w-full p-6 py-12">
             
-            <!-- SECCIÓN DUELO -->
             <div id="seccion-duelo" class="animate-fade">
                 <div class="mb-12 text-center">
-                    <div class="inline-block bg-slate-900 text-white px-6 py-1.5 rounded-full mb-6">
+                    <div class="inline-block bg-slate-900 text-white px-6 py-1.5 rounded-full mb-6 shadow-lg shadow-indigo-200">
                         <span class="text-[9px] font-black uppercase tracking-[0.3em]">
                             <span class="contador-votos-tiempo-real text-orange-400">0</span> Mandatos Ciudadanos
                         </span>
@@ -361,7 +352,7 @@
                             <form onsubmit="enviarPropuesta(event)">
                                 <textarea id="input-idea" rows="2" placeholder="¿Qué debe cambiar en Chile?" class="w-full p-8 bg-slate-50 rounded-[2rem] border-4 border-transparent focus:border-indigo-100 focus:bg-white focus:ring-0 text-xl font-bold mb-8 resize-none transition-all placeholder:text-slate-200"></textarea>
                                 
-                                <p id="form-feedback" class="hidden mb-8 text-[10px] font-black text-white bg-red-600 p-6 rounded-2xl text-center uppercase"></p>
+                                <p id="form-feedback" class="hidden mb-8 text-[10px] font-black text-white bg-red-600 p-6 rounded-2xl text-center uppercase shadow-xl"></p>
 
                                 <div id="ia-loader" class="hidden absolute inset-0 bg-white/98 backdrop-blur-md rounded-[3.5rem] flex items-center justify-center z-20 px-10 text-center">
                                     <div>
@@ -386,7 +377,6 @@
                 </div>
             </div>
 
-            <!-- SECCIÓN RANKING -->
             <div id="seccion-ranking" class="hidden animate-fade">
                 <div class="mb-16">
                     <span class="bg-indigo-600 text-white px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-[0.3em]">Consenso Nacional</span>
