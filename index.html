@@ -3,17 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DEMOCRACIADIRECTACL | Arena Directa</title>
+    <title>DEMOCRACIADIRECTACL | Chile Decide</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Merriweather:ital,wght@0,900;1,900&display=swap" rel="stylesheet">
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, doc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Configuración de Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyBWxTFJGOFesMgIyp5C65qQEnFr5_dCxcU",
             authDomain: "democraciadirectacl-b75ad.firebaseapp.com",
@@ -26,9 +25,24 @@
         const appId = 'democraciadirectacl';
         let db, auth, user;
         let todasLasPropuestas = [];
-        let vistaActual = 'duelo'; 
+        let vistaActual = 'landing';
         let totalVotosGlobal = 0;
-        let dueloActualIds = []; 
+
+        const titulosImpacto = [
+            "CHILE DECIDE<br><span class='text-orange-500'>CON TRANSPARENCIA</span>",
+            "EL MANDATO<br><span class='text-orange-500'>CIUDADANO</span>",
+            "CHILE PRIMERO:<br><span class='text-orange-500'>LA ARENA</span>",
+            "CHILE COLABORA<br><span class='text-orange-500'>Y DECIDE</span>",
+            "LA VOZ DE<br><span class='text-orange-500'>LA COMUNIDAD</span>"
+        ];
+
+        const slogansDinámicos = [
+            "Participa en las decisiones que definen el destino nacional. Tu opinión cuenta de forma directa.",
+            "Porque Chile avanza con la participación de todos. Aquí el sentido común guía nuestras prioridades.",
+            "La plataforma donde la colaboración y la tecnología se unen para fortalecer nuestro futuro.",
+            "Sin intermediarios, de forma neutral y abierta. Prioridades ciudadanas en tiempo real.",
+            "Transforma tu preocupación en propuestas constructivas. Chile progresa con soluciones reales."
+        ];
 
         async function conectarFirebase() {
             try {
@@ -37,12 +51,14 @@
                 db = getFirestore(app);
                 await signInAnonymously(auth);
                 onAuthStateChanged(auth, (u) => {
-                    if (u) { 
-                        user = u; 
-                        escucharDatos(); 
+                    if (u) {
+                        user = u;
+                        escucharDatos();
                     }
                 });
-            } catch (e) { console.error("Error Firebase:", e); }
+            } catch (e) { 
+                actualizarComponentes();
+            }
         }
 
         function escucharDatos() {
@@ -58,98 +74,72 @@
                 todasLasPropuestas = nuevasPropuestas;
                 totalVotosGlobal = total;
                 actualizarComponentes();
-            }, (error) => console.error("Error Firestore:", error));
+            }, (err) => console.error("Error Firestore:", err));
         }
 
         function actualizarComponentes() {
-            document.querySelectorAll('.contador-votos-tiempo-real').forEach(c => c.innerText = totalVotosGlobal.toLocaleString());
+            document.querySelectorAll('.contador-votos-tiempo-real').forEach(c => {
+                c.innerText = (totalVotosGlobal || 0).toLocaleString();
+            });
             if (vistaActual === 'ranking') renderizarRanking();
-            if (vistaActual === 'duelo' && dueloActualIds.length === 0) presentarNuevoDuelo();
         }
+
+        function inicializarLanding() {
+            const index = Math.floor(Math.random() * titulosImpacto.length);
+            document.getElementById('main-title').innerHTML = titulosImpacto[index];
+            document.getElementById('main-slogan').innerText = slogansDinámicos[index];
+        }
+
+        window.entrarALaArena = () => {
+            vistaActual = 'duelo';
+            document.getElementById('landing-page').classList.add('hidden');
+            document.getElementById('app-interface').classList.remove('hidden');
+            presentarNuevoDuelo();
+            window.scrollTo(0, 0);
+        };
 
         window.navegar = (vista) => {
             vistaActual = vista;
             document.getElementById('seccion-duelo').classList.toggle('hidden', vista !== 'duelo');
             document.getElementById('seccion-ranking').classList.toggle('hidden', vista !== 'ranking');
-            
-            document.getElementById('nav-duelo').className = vista === 'duelo' ? 'nav-btn active-nav rounded-xl' : 'nav-btn inactive-nav rounded-xl';
-            document.getElementById('nav-ranking').className = vista === 'ranking' ? 'nav-btn active-nav rounded-xl' : 'nav-btn inactive-nav rounded-xl';
-
             if (vista === 'ranking') renderizarRanking();
+            if (vista === 'duelo') presentarNuevoDuelo();
             window.scrollTo(0, 0);
-        };
-
-        window.enviarPropuesta = async (e) => {
-            e.preventDefault();
-            const tituloInput = document.getElementById('input-titulo');
-            const descInput = document.getElementById('input-desc');
-            const btn = document.getElementById('btn-enviar');
-            
-            const titulo = tituloInput.value.trim();
-            const descripcion = descInput.value.trim();
-            
-            // Validaciones manuales
-            const palabrasTitulo = titulo.split(/\s+/).length;
-            const palabrasDesc = descripcion.split(/\s+/).length;
-
-            if (palabrasTitulo > 5) {
-                alert("El título no puede tener más de 5 palabras.");
-                return;
-            }
-            if (palabrasDesc > 20) {
-                alert("La descripción no puede tener más de 20 palabras.");
-                return;
-            }
-            if (!titulo || !descripcion) {
-                alert("Por favor completa ambos campos.");
-                return;
-            }
-
-            btn.disabled = true;
-            btn.innerText = "PUBLICANDO...";
-
-            try {
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'propuestas'), {
-                    titulo: titulo.toUpperCase(),
-                    descripcion: descripcion,
-                    votos: 1,
-                    creado: serverTimestamp(),
-                    uid: user.uid,
-                    revisado: false
-                });
-                
-                tituloInput.value = "";
-                descInput.value = "";
-                alert("Propuesta enviada. Recuerda que será revisada para asegurar el cumplimiento de las normas de respeto.");
-                window.navegar('ranking');
-            } catch (err) {
-                console.error("Error al guardar:", err);
-                alert("Error de conexión con la base de datos.");
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "ENVIAR A LA ARENA";
-            }
         };
 
         function presentarNuevoDuelo() {
             const container = document.getElementById('contenedor-duelo');
             if (todasLasPropuestas.length < 2) {
-                container.innerHTML = `<div class="p-20 text-center animate-pulse text-indigo-400 font-black uppercase">Esperando más propuestas para iniciar duelos...</div>`;
+                container.innerHTML = `<div class="p-10 text-center animate-pulse text-indigo-400 font-black italic uppercase tracking-[0.2em] text-xs">Sincronizando con la Voluntad Ciudadana...</div>`;
                 return;
             }
-            
-            const shuffled = [...todasLasPropuestas].sort(() => 0.5 - Math.random()).slice(0, 2);
-            dueloActualIds = shuffled.map(p => p.id);
+
+            const shuffled = [...todasLasPropuestas].sort(() => 0.5 - Math.random());
+            const seleccionadas = shuffled.slice(0, 2);
+
+            const card = (p, label, colorBorder) => `
+                <button onclick="votar('${p.id}')" class="group relative p-6 md:p-10 bg-[#0a1128] border-b-[6px] ${colorBorder} rounded-[2rem] hover:translate-y-[-4px] transition-all text-left flex flex-col min-h-[300px] md:min-h-[380px] w-full animate-fade overflow-hidden shadow-xl">
+                    <div class="flex justify-between items-center mb-6 md:mb-8">
+                        <span class="text-[9px] font-bold text-slate-500 uppercase tracking-[0.2em]">${label}</span>
+                        <i class="fas fa-check-circle text-slate-800 text-xl md:text-2xl group-hover:text-orange-500 transition-colors"></i>
+                    </div>
+                    <h3 class="text-2xl md:text-4xl lg:text-5xl font-black text-white tracking-tighter mb-4 md:mb-6 leading-none uppercase group-hover:text-orange-400 transition-colors">${p.titulo}</h3>
+                    <p class="text-sm md:text-lg text-slate-300 font-medium leading-relaxed flex-grow italic">"${p.descripcion}"</p>
+                    <div class="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
+                        <span class="text-[8px] md:text-[9px] font-black text-slate-600 uppercase tracking-widest">Prioridad Ciudadana</span>
+                        <div class="flex items-center gap-2 text-orange-500 font-black text-[10px] opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                            <span>VALIDAR</span>
+                            <i class="fas fa-chevron-right"></i>
+                        </div>
+                    </div>
+                </button>
+            `;
 
             container.innerHTML = `
-                <div class="grid md:grid-cols-2 gap-8 relative">
-                    ${shuffled.map((p, i) => `
-                        <button onclick="votar('${p.id}')" class="p-8 bg-white border-b-8 border-slate-200 rounded-[2.5rem] hover:border-orange-500 hover:shadow-2xl transition-all text-left flex flex-col min-h-[350px]">
-                            <span class="text-[10px] font-black text-white ${i===0?'bg-indigo-600':'bg-slate-900'} px-5 py-1.5 rounded-full uppercase mb-8 self-start">OPCIÓN ${i===0?'A':'B'}</span>
-                            <h3 class="text-3xl md:text-5xl font-black text-slate-900 uppercase mb-6 leading-none">${p.titulo}</h3>
-                            <p class="text-lg text-slate-500 font-semibold flex-grow">${p.descripcion}</p>
-                        </button>
-                    `).join('<div class="hidden md:flex absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-20 w-16 h-16 bg-orange-600 text-white items-center justify-center rounded-2xl font-black italic border-8 border-[#f4f7fa]">VS</div>')}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-10 relative">
+                    ${card(seleccionadas[0], 'Opción A', 'border-indigo-600')}
+                    <div class="hidden md:flex absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-20 w-12 h-12 bg-orange-600 text-white items-center justify-center rounded-full font-black italic border-[4px] border-[#050a1e] shadow-2xl text-xs">VS</div>
+                    ${card(seleccionadas[1], 'Opción B', 'border-slate-700')}
                 </div>
             `;
         }
@@ -160,115 +150,170 @@
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'propuestas', id);
                 await updateDoc(docRef, { votos: increment(1) });
-                dueloActualIds = []; 
-            } catch (e) { console.error("Error al votar:", e); }
-            container.style.opacity = "1";
+                setTimeout(() => {
+                    presentarNuevoDuelo();
+                    container.style.opacity = "1";
+                }, 200);
+            } catch (e) {
+                container.style.opacity = "1";
+            }
         };
 
         function renderizarRanking() {
-            const sorted = [...todasLasPropuestas].sort((a,b) => (b.votos || 0) - (a.votos || 0)).slice(0, 50);
-            const max = sorted[0]?.votos || 0;
-            
-            document.getElementById('lista-ranking').innerHTML = sorted.map((p, i) => `
-                <div class="bg-slate-50 p-8 rounded-[3rem] mb-6 border-l-[10px] border-indigo-600 flex items-center gap-8 shadow-sm">
-                    <span class="text-5xl font-black text-slate-200 w-20 italic">#${i+1}</span>
-                    <div class="flex-1">
-                        <h4 class="font-black text-slate-900 uppercase text-2xl leading-none">${p.titulo}</h4>
-                        <p class="text-slate-500 font-bold mb-4">${p.descripcion}</p>
-                        <div class="w-full h-2 bg-white rounded-full">
-                            <div class="h-full bg-indigo-600 rounded-full" style="width:${max ? (p.votos/max)*100 : 0}%"></div>
+            const container = document.getElementById('lista-ranking');
+            const sorted = [...todasLasPropuestas].sort((a,b) => (b.votos || 0) - (a.votos || 0)).slice(0, 30);
+            const maxVotos = sorted.length > 0 ? (sorted[0].votos || 0) : 0;
+
+            container.innerHTML = sorted.map((p, i) => {
+                const votos = p.votos || 0;
+                const apoyo = totalVotosGlobal > 0 ? ((votos / totalVotosGlobal) * 100).toFixed(1) : "0.0";
+                const barra = maxVotos > 0 ? ((votos / maxVotos) * 100) : 0;
+
+                return `
+                <div class="bg-[#0a1128] p-6 md:p-8 rounded-3xl mb-4 border-l-[4px] border-orange-500 flex flex-col md:flex-row items-center gap-4 md:gap-8 animate-fade relative overflow-hidden">
+                    <span class="text-4xl md:text-6xl font-black text-white/30 w-full md:w-24 text-center md:text-left italic z-0">${i+1 < 10 ? '0'+(i+1) : i+1}</span>
+                    <div class="flex-1 w-full z-10">
+                        <h4 class="font-black text-white uppercase text-lg md:text-2xl mb-1 tracking-tight text-center md:text-left">${p.titulo}</h4>
+                        <p class="text-slate-400 text-xs md:text-sm mb-4 italic text-center md:text-left">"${p.descripcion}"</p>
+                        <div class="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                            <div class="h-full bg-orange-500" style="width: ${barra}%"></div>
                         </div>
                     </div>
-                    <div class="text-right bg-white px-6 py-3 rounded-2xl border border-slate-100">
-                        <span class="block text-2xl font-black text-indigo-900">${totalVotosGlobal ? ((p.votos/totalVotosGlobal)*100).toFixed(1) : 0}%</span>
-                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">${p.votos} votos</span>
+                    <div class="text-center md:text-right min-w-[80px] z-10">
+                        <span class="block text-2xl md:text-3xl font-black text-orange-500">${apoyo}%</span>
+                        <span class="text-[8px] font-bold text-slate-500 uppercase tracking-widest italic">Consenso</span>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
-        window.onload = conectarFirebase;
+        window.onload = () => {
+            conectarFirebase();
+            inicializarLanding();
+        };
     </script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f4f7fa; scroll-behavior: smooth; }
-        .nav-btn { @apply px-8 py-3 font-black text-[10px] uppercase tracking-widest border-b-4 transition-all; }
-        .active-nav { @apply text-indigo-600 border-indigo-600 bg-indigo-50/50; }
-        .inactive-nav { @apply text-slate-300 border-transparent; }
-        input, textarea { border: 2px solid transparent; transition: all 0.3s; }
-        input:focus, textarea:focus { border-color: #6366f1; background: white !important; }
+        body { font-family: 'Inter', sans-serif; background-color: #050a1e; color: #ffffff; -webkit-tap-highlight-color: transparent; }
+        .hero-title { font-family: 'Merriweather', serif; }
+        .nav-btn { @apply px-8 py-4 font-black text-[11px] uppercase tracking-[0.2em] transition-all; }
+        .active-nav { @apply text-orange-500 border-b-2 border-orange-500; }
+        .inactive-nav { @apply text-slate-500 hover:text-white; }
+        @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade { animation: fade-in 0.4s ease-out forwards; }
+        .live-dot { animation: blink 1.5s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
     </style>
 </head>
-<body class="overflow-x-hidden">
-    <nav class="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-100 px-6 py-4">
-        <div class="max-w-7xl mx-auto flex justify-between items-center">
-            <div class="font-black text-2xl italic tracking-tighter">DEMOCRACIA<span class="text-indigo-600">DIRECTACL</span></div>
-            <div class="flex bg-slate-100 p-1.5 rounded-2xl">
-                <button id="nav-duelo" onclick="navegar('duelo')" class="nav-btn active-nav rounded-xl">Arena</button>
-                <button id="nav-ranking" onclick="navegar('ranking')" class="nav-btn inactive-nav rounded-xl">Resultados</button>
+<body class="selection:bg-orange-500 selection:text-white overflow-x-hidden">
+
+    <!-- LANDING PAGE -->
+    <div id="landing-page" class="min-h-screen flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
+        
+        <!-- ELEMENTO "EN VIVO" -->
+        <div class="absolute top-8 left-1/2 -translate-x-1/2 md:left-10 md:translate-x-0 z-20">
+            <div class="flex items-center gap-3 bg-red-600/10 border border-red-600/20 px-5 py-2 rounded-full shadow-2xl backdrop-blur-md">
+                <div class="w-2.5 h-2.5 bg-red-600 rounded-full live-dot shadow-[0_0_12px_#dc2626]"></div>
+                <span class="text-[10px] font-black text-red-500 tracking-[0.2em] uppercase">Participación en Vivo</span>
             </div>
         </div>
-    </nav>
 
-    <main class="max-w-6xl mx-auto p-6 py-12">
-        <div id="seccion-duelo">
-            <div class="text-center mb-12">
-                <div class="inline-block bg-slate-900 text-white px-6 py-2 rounded-full text-[10px] font-black uppercase mb-4">
-                    <span class="contador-votos-tiempo-real text-orange-400">0</span> Votos Totales
+        <!-- Fondo decorativo -->
+        <div class="absolute inset-0 z-0 opacity-20 pointer-events-none">
+            <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-indigo-600/20 blur-[120px] rounded-full"></div>
+        </div>
+
+        <div class="max-w-4xl animate-fade relative z-10 w-full px-2">
+            <div class="inline-flex items-center gap-3 bg-white/5 px-6 py-3 rounded-full mb-12 border border-white/10 backdrop-blur-md">
+                <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                    <span class="contador-votos-tiempo-real text-white">0</span> VALIDACIONES REGISTRADAS
+                </span>
+            </div>
+            
+            <h1 id="main-title" class="text-5xl md:text-7xl lg:text-9xl font-black leading-[0.9] tracking-tighter mb-10 hero-title italic">
+                <!-- Dinámico -->
+            </h1>
+            
+            <p id="main-slogan" class="text-base md:text-xl text-slate-400 font-medium mb-16 max-w-2xl mx-auto leading-relaxed italic px-4">
+                <!-- Dinámico -->
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20 text-left max-w-4xl mx-auto">
+                <div class="bg-white/5 p-6 rounded-2xl border border-white/5 hover:border-orange-500/30 transition-all">
+                    <div class="text-orange-500 font-black mb-2 tracking-widest text-[10px]">I. PROPUESTA</div>
+                    <p class="text-[11px] text-slate-400 font-semibold uppercase leading-tight">Plantea soluciones para las necesidades compartidas de nuestra sociedad.</p>
                 </div>
-                <h2 class="text-5xl font-black uppercase italic tracking-tight">Arena de Decisiones</h2>
-                <p class="text-slate-500 font-bold mt-2">Vota por la propuesta que mejor represente el Chile que quieres.</p>
+                <div class="bg-white/5 p-6 rounded-2xl border border-white/5 hover:border-orange-500/30 transition-all">
+                    <div class="text-orange-500 font-black mb-2 tracking-widest text-[10px]">II. PRIORIZACIÓN</div>
+                    <p class="text-[11px] text-slate-400 font-semibold uppercase leading-tight">La comunidad evalúa y ordena lo que considera más relevante.</p>
+                </div>
+                <div class="bg-white/5 p-6 rounded-2xl border border-white/5 border-orange-500/20 hover:border-orange-500/50 transition-all">
+                    <div class="text-orange-500 font-black mb-2 tracking-widest text-[10px]">III. CONCURRENCIA</div>
+                    <p class="text-[11px] text-slate-400 font-semibold uppercase leading-tight">Consenso abierto que refleja el interés común del país.</p>
+                </div>
             </div>
 
-            <div id="contenedor-duelo" class="mb-20"></div>
+            <button onclick="entrarALaArena()" class="group relative px-14 py-7 bg-orange-600 text-white font-black rounded-full hover:bg-orange-500 transition-all shadow-[0_0_50px_rgba(249,115,22,0.4)] hover:scale-105 active:scale-95">
+                <span class="uppercase tracking-[0.3em] text-sm italic">Iniciar Participación</span>
+            </button>
+        </div>
+    </div>
 
-            <div class="max-w-3xl mx-auto bg-white p-12 rounded-[3.5rem] shadow-2xl relative border-t-8 border-orange-500">
-                <div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-orange-500 text-white px-6 py-2 rounded-full font-black text-[10px] uppercase italic shadow-lg">
-                    Nueva Iniciativa
+    <!-- APP INTERFACE -->
+    <div id="app-interface" class="hidden min-h-screen flex flex-col">
+        <nav class="sticky top-0 z-50 bg-[#050a1e]/90 backdrop-blur-xl border-b border-white/5">
+            <div class="max-w-6xl mx-auto flex flex-col items-center">
+                <div class="py-4 font-black text-xl tracking-tighter uppercase italic cursor-pointer" onclick="location.reload()">
+                    CHILE <span class="text-orange-500">DECIDE</span>
                 </div>
+                <div class="flex gap-4">
+                    <button id="nav-duelo" onclick="navegar('duelo')" class="nav-btn active-nav">Priorizar</button>
+                    <button id="nav-ranking" onclick="navegar('ranking')" class="nav-btn inactive-nav">Mandatos</button>
+                </div>
+            </div>
+        </nav>
+
+        <main class="flex-1 max-w-6xl mx-auto w-full p-4 md:p-12">
+            
+            <!-- SECCION DUELO -->
+            <div id="seccion-duelo" class="animate-fade">
+                <div class="text-center mb-16">
+                    <h2 class="text-3xl md:text-5xl font-black uppercase tracking-tighter italic mb-4">Arena de Prioridades</h2>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-[0.2em]">Selecciona la propuesta con mayor relevancia colectiva para Chile.</p>
+                </div>
+
+                <div id="contenedor-duelo" class="mb-24"></div>
                 
-                <form onsubmit="enviarPropuesta(event)">
-                    <div class="mb-6">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Título (Máx 5 palabras)</label>
-                        <input id="input-titulo" type="text" maxlength="60" placeholder="Ej: TRENES PARA TODO CHILE" 
-                            class="w-full p-6 bg-slate-50 rounded-2xl text-xl font-black uppercase outline-none">
+                <div class="max-w-2xl mx-auto">
+                    <div class="bg-[#0a1128] p-10 rounded-[2.5rem] border border-white/5 relative shadow-2xl">
+                        <div class="flex justify-between items-center mb-8">
+                            <h3 class="text-xs font-black text-orange-500 uppercase tracking-[0.3em] italic">Ingresar Nueva Prioridad</h3>
+                            <span class="text-[9px] font-bold text-red-500 uppercase tracking-widest bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20">Moderación Activa</span>
+                        </div>
+                        <input type="text" placeholder="TÍTULO DIRECTO (EJ. SEGURIDAD CIUDADANA)" class="w-full bg-[#050a1e] p-6 rounded-2xl font-black mb-4 uppercase text-white border border-white/5 focus:border-orange-500 outline-none">
+                        <textarea rows="3" placeholder="¿Cómo beneficia esto a la comunidad? Sé breve y claro. Cualquier contenido ilegal o fuera de norma será eliminado de inmediato." class="w-full bg-[#050a1e] p-6 rounded-2xl font-bold mb-8 text-white border border-white/5 focus:border-orange-500 outline-none"></textarea>
+                        <button class="w-full bg-white text-[#050a1e] py-6 rounded-2xl font-black text-xs uppercase tracking-[0.3em] hover:bg-orange-500 hover:text-white transition-all active:scale-95 shadow-xl">
+                            Enviar al Juicio Ciudadano
+                        </button>
                     </div>
-
-                    <div class="mb-8">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Descripción (Máx 20 palabras)</label>
-                        <textarea id="input-desc" rows="2" placeholder="Explica tu idea de forma clara y respetuosa..." 
-                            class="w-full p-6 bg-slate-50 rounded-2xl text-lg font-bold outline-none"></textarea>
-                    </div>
-
-                    <div class="bg-indigo-50 p-6 rounded-2xl mb-8 border-l-4 border-indigo-600">
-                        <p class="text-xs text-indigo-900 font-semibold leading-relaxed">
-                            <i class="fa-solid fa-circle-info mr-2"></i>
-                            Toda propuesta será revisada diariamente. Contenido ofensivo, con sesgo ideológico extremo o que no cumpla el formato será eliminado para mantener una deliberación sana y constructiva.
-                        </p>
-                    </div>
-
-                    <button id="btn-enviar" type="submit" class="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-lg uppercase tracking-widest hover:bg-indigo-600 transition-all shadow-xl">
-                        Enviar a la Arena
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <div id="seccion-ranking" class="hidden">
-            <div class="flex items-end justify-between mb-12">
-                <div>
-                    <h2 class="text-7xl font-black italic tracking-tighter leading-none">EL <span class="text-indigo-600">PODIO</span></h2>
-                    <p class="text-slate-400 font-black uppercase text-xs mt-4 tracking-widest">Ideas con mayor consenso nacional</p>
                 </div>
             </div>
-            <div id="lista-ranking" class="max-w-4xl mx-auto"></div>
-        </div>
-    </main>
 
-    <footer class="p-12 text-center">
-        <p class="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em]">Democracia Directa CL &copy; 2026 | Moderación diaria sin sesgo</p>
-    </footer>
-</body>
-</html>
+            <!-- SECCION RANKING -->
+            <div id="seccion-ranking" class="hidden animate-fade">
+                <div class="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div>
+                        <h2 class="text-5xl font-black italic tracking-tighter mb-4 uppercase">Mandatos <span class="text-orange-500">Comunes</span></h2>
+                        <p class="text-slate-500 font-bold text-xs uppercase tracking-widest italic">El orden de prioridades establecido por la voluntad ciudadana.</p>
+                    </div>
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <span class="text-[10px] text-slate-500 font-black uppercase tracking-widest block mb-1">Muestra Ciudadana</span>
+                        <span class="contador-votos-tiempo-real text-2xl font-black text-orange-500">0</span>
+                    </div>
+                </div>
+                <div id="lista-ranking" class="max-w-4xl mx-auto pb-32"></div>
+            </div>
+        </main>
+    </div>
 </body>
 </html>
